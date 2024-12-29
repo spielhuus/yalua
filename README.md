@@ -1,4 +1,10 @@
-
+|--------------|----|
+| Build Status | 
+[![unittests](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/busted.yml?branch=main&style=for-the-badge&label=Unittests)](https://github.com/spielhuus/yalua/actions/workflows/test.yml)  
+[![documentation](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/documentation.yml?branch=main&style=for-the-badge&label=Documentation)](https://github.com/spielhuus/yalua/actions/workflows/documentation.yml)
+[![luacheck](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/luacheck.yml?branch=main&style=for-the-badge&label=Luacheck)](https://github.com/spielhuus/yalua/actions/workflows/luacheck.yml)
+[![llscheck](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/llscheck.yml?branch=main&style=for-the-badge&label=llscheck)](https://github.com/spielhuus/yalua/actions/workflows/llscheck.yml) |
+| License      | [![License-MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](https://github.com/spielhuus/yalua/blob/main/LICENSE)|
 
 > [!IMPORTANT]
 > This is a work in progress project
