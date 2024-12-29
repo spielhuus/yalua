@@ -1,0 +1,31 @@
+---
+name: luarocks test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Install Lua
+        uses: leso-kn/gh-actions-lua@master
+        with:
+          luaVersion: "5.1"
+
+      - name: Install Luarocks
+        uses: hishamhm/gh-actions-luarocks@master
+        with:
+          luarocksVersion: "3.11.1"
+        
+      - name: Run tests
+        run: |
+          luarocks test --local
