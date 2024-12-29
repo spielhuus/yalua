@@ -3,15 +3,15 @@ local yaml = require("yaml")
 
 describe("2.2 Structures", function()
 	it("should parse example: #2.7 Two Documents in a Stream (each with a leading comment)", function()
-		local text = [[# Ranking of 1998 home runs 
---- 
-- Mark McGwire 
-- Sammy Sosa 
-- Ken Griffey 
- 
-# Team ranking 
---- 
-- Chicago Cubs 
+		local text = [[# Ranking of 1998 home runs
+---
+- Mark McGwire
+- Sammy Sosa
+- Ken Griffey
+
+# Team ranking
+---
+- Chicago Cubs
 - St Louis Cardinals]]
 		local result = yaml.decode(text)
 		assert.are.same(
@@ -21,14 +21,14 @@ describe("2.2 Structures", function()
 	end)
 
 	it("should parse example: #2.8 Play by Play Feed from a Game", function()
-		local text = [[--- 
-time: 20:03:20 
-player: Sammy Sosa 
-action: strike (miss) 
-... 
---- 
-time: 20:03:47 
-player: Sammy Sosa 
+		local text = [[---
+time: 20:03:20
+player: Sammy Sosa
+action: strike (miss)
+...
+---
+time: 20:03:47
+player: Sammy Sosa
 action: grand slam]]
 		local result = yaml.decode(text)
 		assert.are.same({
@@ -38,13 +38,13 @@ action: grand slam]]
 	end)
 
 	it("should parse example: #2.9 Single Document with Two Comments", function()
-		local text = [[--- 
-hr: # 1998 hr ranking 
-- Mark McGwire 
-- Sammy Sosa 
-# 1998 rbi ranking 
-rbi: 
-- Sammy Sosa 
+		local text = [[---
+hr: # 1998 hr ranking
+- Mark McGwire
+- Sammy Sosa
+# 1998 rbi ranking
+rbi:
+- Sammy Sosa
 - Ken Griffey]]
 		local result = yaml.decode(text)
 		assert.are.same({ hr = { "Mark McGwire", "Sammy Sosa" }, rbi = { "Sammy Sosa", "Ken Griffey" } }, result)

@@ -17,10 +17,10 @@ LLS=.venv/bin/lua-language-server
 # 	curl -L $(LLS_URL) -o /tmp/$(LLS_GZ)
 # 	tar xfz /tmp/$(LLS_GZ) -C .venv
 # 	rm /tmp/$(LLS_GZ)
-#
-# luacheck: ## Run luackeck
-# 	$(LUACHECK) lua .
-#
+
+luacheck: ## Run luackeck
+	$(LUACHECK) .
+
 # luals: $(LLS) ## Run language server checks.
 # 	lua-language-server --configpath .luarc.json --logpath .ci/lua-ls/log --check .
 

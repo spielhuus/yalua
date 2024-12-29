@@ -1,6 +1,8 @@
 local str = require("str")
 
-require("tableutils")
+local function empty(tbl)
+	return rawequal(next(tbl), nil)
+end
 
 local function clean_key(val)
 	local trimmed = str.trim(val)
@@ -101,7 +103,7 @@ lexer = function(tokens, indent)
 			break
 		end
 		if tokens:match({ tokens.states.DOC }) then
-			if not table.empty(result) then
+			if not empty(result) then
 				table.insert(documents, result)
 				result = {}
 			end
@@ -109,7 +111,7 @@ lexer = function(tokens, indent)
 		elseif tokens:match({ tokens.states.LCURLY }) or tokens:match({ tokens.states.LSQUARE }) then
 			result = collect_flow(tokens, 0)
 		elseif tokens:match({ tokens.states.ENDDOC }) then
-			if not table.empty(result) then
+			if not empty(result) then
 				table.insert(documents, result)
 				result = {}
 			end
@@ -170,7 +172,7 @@ lexer = function(tokens, indent)
 		end
 	end
 
-	if not table.empty(documents) then
+	if not empty(documents) then
 		table.insert(documents, result)
 		return documents
 	else
