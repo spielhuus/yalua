@@ -1,3 +1,7 @@
+# project specific
+.luarocks
+.nvim
+
 # Compiled Lua sources
 luac.out
 
