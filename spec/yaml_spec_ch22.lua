@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local yaml = require("yaml")
+local yaml = require("yalua")
 
 describe("2.2 Structures", function()
 	it("should parse example: #2.7 Two Documents in a Stream (each with a leading comment)", function()

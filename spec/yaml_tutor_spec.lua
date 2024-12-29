@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local yaml = require("yaml")
+local yaml = require("yalua")
 
 describe("Test the YAML parser", function()
 	it("should parse Example 2.1 Sequence of Scalars (ball players)", function()

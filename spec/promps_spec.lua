@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local yaml = require("yaml")
+local yaml = require("yalua")
 
 describe("Test the YAML LLM promopts", function()
 	it("it should parse the lua prompt", function()

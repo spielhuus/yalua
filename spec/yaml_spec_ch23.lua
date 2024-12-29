@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local yaml = require("yaml")
+local yaml = require("yalua")
 
 describe("2.3 Scalars", function()
 	-- 	it("should parse example: #2.13 In literals, newlines are preserved", function()
