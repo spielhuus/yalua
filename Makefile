@@ -30,8 +30,8 @@ test: $(LUA_FILES) $(SPEC_FILES) ## Run the tests
 install: $(SOURCES) ## install the lua rock
 	$(LUAROCKS) --lua-version 5.1 --tree $(LUA_TREE) make
 
-# clean: ## Remove temprorary files
-# 	rm -rf $(REPO_PATH)
+clean: ## Remove temprorary files
+	rm -rf $(LUA_TREE)
 
 help: 
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

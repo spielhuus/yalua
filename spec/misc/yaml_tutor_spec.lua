@@ -1,8 +1,9 @@
 local assert = require("luassert")
 local yaml = require("yalua")
 
-describe("Test the YAML parser", function()
-	it("should parse Example 2.1 Sequence of Scalars (ball players)", function()
+-- tutorial at: https://spacelift.io/blog/yaml
+describe("Test the YAML parser with the YAML tutorial", function()
+	it("should parse simple example", function()
 		local Example1 = [[---
 # key: value [mapping]
 company: spacelift

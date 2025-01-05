@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local yaml = require("yalua")
+local yalua = require("yalua")
 
 describe("2.1 Collections", function()
 	it("should parse example: #2.1 Sequence of Scalars (ball players)", function()
@@ -8,7 +8,7 @@ describe("2.1 Collections", function()
 - Sammy Sosa
 - Ken Griffey
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({ "Mark McGwire", "Sammy Sosa", "Ken Griffey" }, result)
 	end)
 
@@ -18,7 +18,7 @@ hr:  65    # Home runs
 avg: 0.278 # Batting average
 rbi: 147   # Runs Batted In
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({ hr = 65, avg = 0.278, rbi = 147 }, result)
 	end)
 
@@ -33,7 +33,7 @@ national:
 - Chicago Cubs
 - Atlanta Braves
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({
 			american = { "Boston Red Sox", "Detroit Tigers", "New York Yankees" },
 			national = { "New York Mets", "Chicago Cubs", "Atlanta Braves" },
@@ -51,7 +51,7 @@ national:
   hr:   63
   avg:  0.288
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({
 			{ name = "Mark McGwire", hr = 65, avg = 0.278 },
 			{ name = "Sammy Sosa", hr = 63, avg = 0.288 },
@@ -64,7 +64,7 @@ national:
 - [Mark McGwire, 65, 0.278]
 - [Sammy Sosa  , 63, 0.288]
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({
 			{ "name", "hr", "avg" },
 			{ "Mark McGwire", 65, 0.278 },
@@ -80,7 +80,7 @@ Sammy Sosa: {
     avg: 0.288,
  }
 ]]
-		local result = yaml.decode(text)
+		local result = yalua.decode(text)
 		assert.are.same({
 			["Mark McGwire"] = { hr = 65, avg = 0.278 },
 			["Sammy Sosa"] = { hr = 63, avg = 0.288 },
