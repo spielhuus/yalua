@@ -1,7 +1,7 @@
 local assert = require("luassert")
 local yalua = require("yalua")
 
-describe("Test the YAML LLM promopts", function()
+describe("Test the YAML LLM promopts #json", function()
 	it("it should parse a plain json file", function()
 		local json = [[{
   "user": {

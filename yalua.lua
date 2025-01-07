@@ -1,25 +1,58 @@
 local StringIterator = require("StringIterator")
+local to_string = require("str").to_string
 
+local debug = true
+local log = {
+	debug = function(...)
+		if debug then
+			local result = {}
+			for i = 1, select("#", ...) do
+				local x = select(i, ...)
+				if type(x) == "table" then
+					table.insert(result, to_string(x))
+				elseif type(x) == "string" then
+					table.insert(result, "'" .. x .. "'")
+				elseif x == nil then
+					table.insert(result, "nil")
+				else
+					table.insert(result, x)
+				end
+			end
+			print(table.concat(result))
+		end
+	end,
+}
 -- -------------------------------------------------------------------
 -- ---                     Utility functions                       ---
 -- -------------------------------------------------------------------
+
+local yalua_debug = true
+local function log(msg)
+	if yalua_debug then
+		print(msg)
+	end
+end
 
 local function clean_key(key)
 	local trimmed = require("str").trim(key)
 	return trimmed
 end
 
-local function value(val)
-	local trimmed = require("str").trim(val)
-	if string.match(trimmed, "^['\"].*['\"]$") then
-		return string.sub(trimmed, 2, #trimmed - 1)
+local function value(val, tag)
+	if tag == "|" or tag == ">" then
+		return val
+	else
+		local trimmed = require("str").trim(val)
+		if string.match(trimmed, "^['\"].*['\"]$") then
+			return string.sub(trimmed, 2, #trimmed - 1)
+		end
+		if trimmed == "true" or trimmed == "True" or trimmed == "TRUE" then
+			return true
+		elseif trimmed == "false" or trimmed == "False" or trimmed == "FALSE" then
+			return false
+		end
+		return tonumber(require("str").trim(val)) or require("str").trim(val)
 	end
-	if trimmed == "true" or trimmed == "True" or trimmed == "TRUE" then
-		return true
-	elseif trimmed == "false" or trimmed == "False" or trimmed == "FALSE" then
-		return false
-	end
-	return tonumber(require("str").trim(val)) or require("str").trim(val)
 end
 
 -- -------------------------------------------------------------------
@@ -32,6 +65,7 @@ local states = {
 	SEQUENCE_VALUE = 101,
 	MAPPING_SCALAR = 102,
 	SEQUENCE_ENTRY = 2, -- ”-” (x2D, hyphen) denotes a block sequence entry.
+	SEQUENCE_ENTRY_NL = 202, -- ”-” (x2D, hyphen) denotes a block sequence entry.
 	MAPPING_KEY = 3, -- ”?” (x3F, question mark) denotes a mapping key.
 	MAPPING_VALUE = 4, -- ”:” (x3A, colon) denotes a mapping value.
 	MAPPING_VALUE_NL = 204, -- ”:” (x3A, colon) denotes a mapping value.
@@ -68,6 +102,8 @@ local states = {
 	FLOW_MAPPINNG_VALUE = 34,
 	FLOW_COLLECT_ENTRY = 35,
 	FLOW_STORE = 36,
+	FLOW_SINGLE_QUOTE = 37,
+	FLOW_DOUBLE_QUOTE = 38,
 }
 
 local function state_to_name(state)
@@ -84,17 +120,22 @@ local transitions = {
 		{ "---", states.START_DOC },
 		{ "...", states.END_DOC },
 		{ " ", states.INDENT },
-		{ "-", states.SEQUENCE_ENTRY },
+		{ "- ", states.SEQUENCE_ENTRY },
+		{ "-\n", states.SEQUENCE_ENTRY_NL },
 		{ ": ", states.MAPPING_VALUE },
 		{ ":\n", states.MAPPING_VALUE_NL }, -- TODO also support \r
 		{ "\n", states.NL },
 		{ "\r", states.NL },
 		{ "\r\n", states.NL },
+		{ "'", states.SINGLE_QUOTE },
+		{ '"', states.DOUBLE_QUOTE },
 		{ "#", states.COMMENT },
 		{ "[", states.SEQUENCE_START },
 		{ "{", states.MAPPING_START },
 		{ "|", states.LITERAL },
 		{ ">", states.FOLDED },
+		{ "&", states.ANCHOR },
+		{ "*", states.ALIAS },
 		{ "_", states.SCALAR },
 	},
 	[states.SCALAR] = {
@@ -119,6 +160,7 @@ local transitions = {
 		{ "[", states.SEQUENCE_START },
 		{ ">", states.FOLDED },
 		{ "|", states.LITERAL },
+		{ "!!", states.TAG },
 		{ " ", states.SKIP },
 		{ "_", states.SCALAR },
 	},
@@ -129,19 +171,20 @@ local transitions = {
 		{ '"', states.DOUBLE_QUOTE },
 		{ "&", states.ANCHOR },
 		{ "*", states.ALIAS },
-		{ "-", states.SEQUENCE_ENTRY },
+		{ "- ", states.SEQUENCE_ENTRY },
 		{ "{", states.MAPPING_START },
 		{ "[", states.SEQUENCE_START },
 		{ ">", states.FOLDED },
 		{ "|", states.LITERAL },
+		{ "!!", states.TAG },
 		{ " ", states.SKIP },
 		{ "_", states.SCALAR },
 	},
 	[states.SEQUENCE_START] = {
 		{ "\n", states.NL },
 		{ "#", states.COMMENT },
-		{ "'", states.SINGLE_QUOTE },
-		{ '"', states.DOUBLE_QUOTE },
+		{ "'", states.FLOW_SINGLE_QUOTE },
+		{ '"', states.FLOW_DOUBLE_QUOTE },
 		{ "&", states.ANCHOR },
 		{ "{", states.MAPPING_START },
 		{ "[", states.SEQUENCE_START },
@@ -202,6 +245,8 @@ function Parser:new(str)
 	o.result = {}
 	o.index = 0
 	o:__parse(str)
+	o.anchor = nil
+	o.alias = nil
 	return o
 end
 
@@ -219,6 +264,8 @@ function Parser:__tostring()
 				.. item.col
 				.. "]"
 				.. (item.value and (" '" .. item.value .. "'") or "")
+				.. (item.anchor and (" _&'" .. item.anchor .. "'") or "")
+				.. (item.alias and (" _*'" .. item.alias .. "'") or "")
 		)
 	end
 	return table.concat(str, "\n")
@@ -228,14 +275,12 @@ function Parser:__next_state(iter, state)
 	if not iter:peek() then
 		return nil
 	end
-	print(">>>" .. state_to_name(state) .. " '" .. iter:peek() .. "'")
+	log(">>>" .. state_to_name(state) .. " '" .. iter:peek() .. "'")
 	for _, v in ipairs(transitions[state]) do
 		local peek = iter:peek(1, #v[1])
 		if peek and peek == v[1] then
-			-- print("===" .. state_to_name(state) .. " '" .. iter:peek() .. "' " .. state_to_name(v[2]))
 			return #v[1], v[2]
 		elseif v[1] == "_" then
-			-- print("***" .. state_to_name(state) .. " '" .. iter:peek() .. "' " .. state_to_name(v[2]))
 			return 1, v[2]
 		end
 	end
@@ -258,14 +303,30 @@ function Parser:__collect(iter, next_state, chars)
 	self:__push(iter, next_state, chars)
 end
 
-function Parser:__push(iter, state, chars)
+function Parser:__push(iter, state, chars, tag)
 	if chars then
-		table.insert(
-			self.result,
-			{ state = state, indent = self.indent, value = table.concat(chars, ""), row = iter.row, col = iter.col }
-		)
+		table.insert(self.result, {
+			state = state,
+			indent = self.indent,
+			anchor = self.anchor,
+			value = table.concat(chars, ""),
+			row = iter.row,
+			tag = tag or self.tag,
+			col = iter.col,
+		})
+		self.anchor = nil
+		self.tag = nil
 	else
-		table.insert(self.result, { state = state, indent = self.indent, row = iter.row, col = iter.col })
+		table.insert(self.result, {
+			state = state,
+			indent = self.indent,
+			alias = self.alias,
+			self.anchor,
+			tag = (tag or self.tag),
+			row = iter.row,
+			col = iter.col,
+		})
+		self.alias = nil
 	end
 end
 
@@ -289,7 +350,7 @@ function Parser:__parse(str)
 	while not iter:eof() do
 		next_index, next_state = self:__next_state(iter, self.state)
 		local token = iter:get(next_index)
-		print(
+		log(
 			string.format(
 				"> state: %s -> %s, from: %d, to: %d, content: '%s'",
 				state_to_name(self.state),
@@ -303,12 +364,23 @@ function Parser:__parse(str)
 			self.indent = self.indent + 1
 		elseif next_state == states.START_DOC then
 			self:__push(iter, next_state)
+		elseif next_state == states.END_DOC then
+			self:__push(iter, next_state)
+			self.state = states.START
 		elseif next_state == states.SCALAR then
 			self:__collect(iter, next_state, { token })
 			self.state = states.START
 		elseif next_state == states.SEQUENCE_VALUE then
 			self:__collect(iter, next_state, { token })
 			self.state = states.SEQUENCE_START
+		elseif next_state == states.FLOW_DOUBLE_QUOTE then
+			local chars = iter:to_quote('"')
+			self:__push(iter, states.SEQUENCE_VALUE, chars, '"')
+			next_state = states.SEQUENCE_START
+		elseif next_state == states.FLOW_SINGLE_QUOTE then
+			local chars = iter:to_quote("'")
+			self:__push(iter, states.SEQUENCE_VALUE, chars, "'")
+			next_state = states.SEQUENCE_START
 		elseif next_state == states.MAPPING_SCALAR then
 			self:__collect(iter, next_state, { token })
 			self.state = states.MAPPING_START
@@ -340,7 +412,8 @@ function Parser:__parse(str)
 					break
 				end
 			end
-			self:__push(iter, states.SCALAR, { table.concat(chars, "\n") })
+			table.insert(chars, "")
+			self:__push(iter, states.SCALAR, { table.concat(chars, "\n") }, "|")
 			self.state = states.START
 		elseif next_state == states.FOLDED then
 			iter:to_eol()
@@ -352,25 +425,40 @@ function Parser:__parse(str)
 					break
 				end
 			end
-			self:__push(iter, states.SCALAR, { table.concat(chars, " ") })
+			local res = table.concat(chars, " ")
+			res = res .. "\n"
+			self:__push(iter, states.SCALAR, { res }, ">")
 			self.state = states.START
-		elseif next_state == states.ANCHOR or next_state == states.ALIAS then
-			local key = iter:to_space_or_nl()
-			assert(key)
-			self:__push(iter, next_state, key)
+		elseif next_state == states.TAG then
+			self.tag = table.concat(iter:to_space_or_nl(), "")
+			assert(self.tag)
+		elseif next_state == states.ANCHOR then
+			self.anchor = table.concat(iter:to_space_or_nl(), "")
+			assert(self.anchor)
+		elseif next_state == states.ALIAS then
+			self.alias = table.concat(iter:to_space_or_nl(), "")
+			assert(self.alias)
+			self:__push(iter, states.SCALAR)
 		elseif next_state == states.DOUBLE_QUOTE then
 			local chars = iter:to_quote('"')
-			self:__push(iter, states.SCALAR, chars)
+			self:__push(iter, states.SCALAR, chars, '"')
 			next_state = states.START
 		elseif next_state == states.SINGLE_QUOTE then
 			local chars = iter:to_quote("'")
-			self:__push(iter, states.SCALAR, chars)
+			self:__push(iter, states.SCALAR, chars, "'")
 			next_state = states.START
 		elseif next_state == states.MAPPING_VALUE_NL then
 			self:__push(iter, states.MAPPING_VALUE)
 			self.state = states.START
 			self.indent = 0
+		elseif next_state == states.SEQUENCE_ENTRY_NL then
+			self:__push(iter, states.SEQUENCE_ENTRY)
+			self.state = states.START
+			self.indent = 0
 		elseif next_state == states.NL then
+			if self.tag or self.alias then -- store tags without scalar
+				self:__push(iter, states.SCALAR)
+			end
 			if flow == 0 then
 				self.state = states.START
 				self.indent = 0
@@ -425,7 +513,7 @@ function Lexer:__match(pattern)
 		return false
 	end
 	local pos = self.index + 1
-	for _, p in ipairs(pattern) do
+	for i, p in ipairs(pattern) do
 		if p ~= self.tokens[pos].state then
 			return false
 		end
@@ -439,6 +527,7 @@ function Lexer:__tostring()
 	local indent = 0
 	local val_type
 	for _, line in ipairs(self.result) do
+		log(require("str").to_string(line))
 		if line.state == nodes.START_STREAM then
 			table.insert(result, string.format("%s+STR", string.rep(" ", indent)))
 			indent = indent + 1
@@ -446,26 +535,63 @@ function Lexer:__tostring()
 			indent = indent - 1
 			table.insert(result, string.format("%s-STR", string.rep(" ", indent)))
 		elseif line.state == nodes.START_DOC then
-			table.insert(result, string.format("%s+DOC", string.rep(" ", indent)))
+			table.insert(
+				result,
+				string.format("%s+DOC%s", string.rep(" ", indent), (line.tag and (" " .. line.tag) or ""))
+			)
 			indent = indent + 1
 		elseif line.state == nodes.END_DOC then
 			indent = indent - 1
-			table.insert(result, string.format("%s-DOC", string.rep(" ", indent)))
+			table.insert(
+				result,
+				string.format("%s-DOC%s", string.rep(" ", indent), (line.tag and (" " .. line.tag) or ""))
+			)
 		elseif line.state == nodes.START_SEQ then
-			table.insert(result, string.format("%s+SEQ", string.rep(" ", indent)))
+			table.insert(
+				result,
+				string.format("%s+SEQ%s", string.rep(" ", indent), (line.tag and ("" .. line.tag) or ""))
+			)
 			indent = indent + 1
 		elseif line.state == nodes.END_SEQ then
 			indent = indent - 1
 			table.insert(result, string.format("%s-SEQ", string.rep(" ", indent)))
 		elseif line.state == nodes.START_MAP then
-			table.insert(result, string.format("%s+MAP", string.rep(" ", indent)))
+			table.insert(
+				result,
+				string.format("%s+MAP%s", string.rep(" ", indent), (line.tag and (" " .. line.tag) or ""))
+			)
 			indent = indent + 1
 			val_type = ":"
 		elseif line.state == nodes.END_MAP then
 			indent = indent - 1
 			table.insert(result, string.format("%s-MAP", string.rep(" ", indent)))
 		elseif line.state == nodes.VAL then
-			table.insert(result, string.format("%s=VAL %s%s", string.rep(" ", indent), val_type, line.value))
+			if line.alias then
+				table.insert(result, string.format("%s=ALI *%s", string.rep(" ", indent), line.alias))
+			elseif line.anchor then
+				table.insert(
+					result,
+					string.format(
+						"%s=VAL &%s %s%s",
+						string.rep(" ", indent),
+						line.anchor,
+						line.tag or ":",
+						(line.value and value(line.value, line.tag) or "")
+					)
+				)
+			else
+				table.insert(
+					result,
+					string.format(
+						"%s=VAL %s%s",
+						string.rep(" ", indent),
+						(line.tag or ":"),
+						(line.value and value(line.value, line.tag) or "")
+					)
+				)
+			end
+		else
+			error("unknown element:" .. line.state)
 		end
 	end
 	table.insert(result, "")
@@ -497,14 +623,28 @@ function Lexer:eof()
 	end
 end
 
+function Lexer:__copy(node, state, t)
+	log("copy: " .. to_string(node))
+	table.insert(self.result, {
+		state = state,
+		type = t,
+		value = node.value,
+		alias = node.alias,
+		anchor = node.anchor,
+		row = node.row,
+		col = node.col,
+		tag = node.tag,
+	})
+end
+
 function Lexer:__flow_map()
-	table.insert(self.result, { state = nodes.START_MAP, type = "flow" })
+	table.insert(self.result, { state = nodes.START_MAP, type = "flow", tag = "{}" })
 	self:next()
 	while not self:eof() do
 		if self:peek().state == states.MAPPING_SCALAR then
 			assert(self:peek() and self:peek().state == states.MAPPING_SCALAR)
-			table.insert(self.result, { state = nodes.VAL, type = "flow", value = self:next().value })
-			table.insert(self.result, { state = nodes.VAL, type = "flow", value = self:next().value })
+			self:__copy(self:next(), nodes.VAL, "flow")
+			self:__copy(self:next(), nodes.VAL, "flow")
 		elseif self:peek().state == states.MAPPING_END then
 			break
 		else
@@ -515,11 +655,12 @@ function Lexer:__flow_map()
 end
 
 function Lexer:__flow_sequence()
-	table.insert(self.result, { state = nodes.START_SEQ, type = "flow" })
+	log(">FLOW SEQUENCE")
+	table.insert(self.result, { state = nodes.START_SEQ, type = "flow", tag = "[]" })
 	self:next()
 	while not self:eof() do
 		if self:peek().state == states.SEQUENCE_VALUE then
-			table.insert(self.result, { state = nodes.VAL, type = "flow", value = self:next().value })
+			self:__copy(self:next(), nodes.VAL, "flow")
 		elseif self:peek().state == states.SEQUENCE_END then
 			break
 		else
@@ -545,7 +686,7 @@ function Lexer:__flow()
 			depth = depth - 1
 			self:next()
 		else
-			print("[TRACE] unexpected flow child: " .. state_to_name(self:peek().state))
+			log("[TRACE] unexpected flow child: " .. state_to_name(self:peek().state))
 			break
 		end
 		if depth == 0 then
@@ -555,94 +696,112 @@ function Lexer:__flow()
 end
 
 function Lexer:__map()
-	print("map: " .. self:peek().indent)
+	log(
+		">map: "
+			.. self:peek().indent
+			.. " "
+			.. state_to_name(self:peek().state)
+			.. ">"
+			.. state_to_name(self.tokens[self.index + 1].state)
+			.. ">"
+			.. state_to_name(self.tokens[self.index + 2].state)
+	)
+	-- yalua dirty hack to detect failure when MAP_ENTRY is the last value in the stream
+	if self.index + 3 > #self.tokens then
+		error("break")
+	end
 	local indent = self:peek().indent
 	table.insert(self.result, { state = nodes.START_MAP })
 	while not self:eof() do
-		print(" : " .. state_to_name(self:peek().state) .. " " .. indent .. " -> " .. self:peek().indent)
+		log(" : " .. state_to_name(self:peek().state) .. " " .. indent .. " -> " .. self:peek().indent)
 		if self:peek().indent < indent then
-			print("!map break")
+			log("!map break")
 			break
 		end
 		if self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR, states.MAPPING_VALUE }) then
-			print("Match map with map")
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
+			log("Match map with map")
+			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__map()
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR }) then
-			print("Match map with scalar: " .. self:peek().value)
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
+			log("Match map with scalar: " .. (self:peek().value or "nil"))
+			self:__copy(self:next(), nodes.VAL)
 			self:next()
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
-		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.ANCHOR, states.SCALAR }) then
-			print("Match map with scalar and anchor: " .. self:peek().value)
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
-			self:next()
-			local anchor = self:next().value
-			local next = self:next()
-			assert(next)
-			print("Save Anchor: " .. anchor .. "=" .. next.value)
-			self.anchors[clean_key(anchor)] = next.value
-			table.insert(self.result, { state = nodes.VAL, value = next.value })
+			self:__copy(self:next(), nodes.VAL)
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SEQUENCE_ENTRY }) then
-			print("Match map with sequence: " .. self:peek().value)
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
+			log("Match map with sequence: " .. self:peek().value)
+			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__collection()
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.MAPPING_START }) then
-			print("Match map with flow")
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
+			log("Match map with flow")
+			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__flow()
+		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SEQUENCE_START }) then
+			log("Match map with flow sequence")
+			self:__copy(self:next(), nodes.VAL)
+			self:next()
+			self:__flow()
+		-- elseif self.tokens[self.index + 2] == states.MAPPING_VALUE and self.index + 3 > #self.tokens then
+		-- 	error(
+		-- 		"unknown match for map: "
+		-- 			.. state_to_name(self:peek().state)
+		-- 			.. " ["
+		-- 			.. self:peek().row
+		-- 			.. ":"
+		-- 			.. self:peek().col
+		-- 			.. "]"
+		-- 	)
 		else
-			-- TODO we must check indentation?
-			-- print(
-			-- 	"not match for map: "
-			-- 		.. state_to_name(self:peek().state)
-			-- 		.. " ["
-			-- 		.. self:peek().row
-			-- 		.. ":"
-			-- 		.. self:peek().col
-			-- 		.. "]"
-			-- )
+			log(
+				"unknown match for map: "
+					.. state_to_name(self:peek().state)
+					.. "/"
+					.. state_to_name(self.tokens[2].state)
+					.. " ["
+					.. self:peek().row
+					.. ":"
+					.. self:peek().col
+					.. "]"
+					.. self.index + 3
+					.. ">"
+					.. #self.tokens
+			)
 			break
 		end
 	end
 	table.insert(self.result, { state = nodes.END_MAP })
-	print("<map")
+	log("<map")
 end
 
 function Lexer:__collection()
-	print("collection")
-	-- local indent = self:peek().indent
+	log("collection")
+	local indent = -1 -- TODO self:peek().indent
+	log("SEQUENCE_INDENT: " .. indent)
 	table.insert(self.result, { state = nodes.START_SEQ })
 	while not self:eof() do
-		print("  > " .. state_to_name(self:peek().state))
+		log("  > " .. state_to_name(self:peek().state) .. " " .. indent .. " > " .. self:peek().indent)
+		if indent == -1 and self:peek().indent > 0 then
+			indent = self:peek().indent
+		elseif indent > self:peek().indent then
+			print("break")
+			break
+		end
 		if self:__match({ states.SEQUENCE_ENTRY, states.SCALAR, states.MAPPING_VALUE }) then
 			self:next()
 			self:__map()
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SCALAR }) then
 			self:next()
-			print("Match collection with scalar: " .. self:peek().value)
-			local next = self:next()
-			assert(next)
-			table.insert(self.result, { state = nodes.VAL, value = next.value })
-		elseif self:__match({ states.SEQUENCE_ENTRY, states.ANCHOR, states.SCALAR }) then
-			self:next()
-			local anchor = self:next().value
-			local next = self:next()
-			assert(next)
-			print("Save Anchor: " .. anchor .. "=" .. next.value)
-			self.anchors[clean_key(anchor)] = next.value
-			table.insert(self.result, { state = nodes.VAL, anchor = anchor, value = next.value })
-		elseif self:__match({ states.SEQUENCE_ENTRY, states.ALIAS }) then
-			self:next()
-			local alias = self:next().value
-			table.insert(self.result, { state = nodes.VAL, alias = alias })
+			log("Match collection with scalar: " .. (self:peek().value or "nil"))
+			self:__copy(self:next(), nodes.VAL)
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SEQUENCE_ENTRY }) then
 			self:next()
 			self:__collection()
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SEQUENCE_START }) then
+			self:next()
+			self:__flow()
+		elseif self:__match({ states.SEQUENCE_ENTRY, states.MAPPING_START }) then
 			self:next()
 			self:__flow()
 		else
@@ -650,22 +809,24 @@ function Lexer:__collection()
 		end
 	end
 	table.insert(self.result, { state = nodes.END_SEQ })
-	print("<collection")
+	log("<collection")
 end
 
 function Lexer:tree()
-	print("== Lexer")
+	log("== Lexer")
 	table.insert(self.result, { state = nodes.START_STREAM })
-	table.insert(self.result, { state = nodes.START_DOC })
-	if self:peek().state == states.START_DOC then
-		self:next()
+	if self:peek().state ~= states.START_DOC then
+		table.insert(self.result, { state = nodes.START_DOC })
 	end
 	while not self:eof() do
 		if self:__match({ states.START_DOC }) then
-			if self.result[#self.result].state ~= states.END_DOC then
+			if self.result[#self.result].state ~= nodes.END_DOC and #self.result > 1 then
 				table.insert(self.result, { state = nodes.END_DOC })
 			end
-			table.insert(self.result, { state = nodes.START_DOC })
+			table.insert(self.result, { state = nodes.START_DOC, tag = "---" })
+			self:next()
+		elseif self:__match({ states.END_DOC }) then
+			table.insert(self.result, { state = nodes.END_DOC, tag = "..." })
 			self:next()
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE }) then
 			self:__map()
@@ -677,8 +838,10 @@ function Lexer:tree()
 			self:__collection()
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SEQUENCE_START }) then
 			self:__collection()
+		elseif self:__match({ states.SEQUENCE_ENTRY, states.SEQUENCE_SEQUENCE_ENTRY }) then
+			self:__collection()
 		elseif self:__match({ states.SCALAR }) then
-			table.insert(self.result, { state = nodes.VAL, value = self:next().value })
+			self:__copy(self:next(), nodes.VAL)
 		else
 			error(
 				"not match for tree: "
@@ -691,8 +854,28 @@ function Lexer:tree()
 			)
 		end
 	end
-	table.insert(self.result, { state = nodes.END_DOC })
+
+	if self.result[#self.result].state ~= nodes.END_DOC and #self.result then
+		table.insert(self.result, { state = nodes.END_DOC })
+	end
 	table.insert(self.result, { state = nodes.END_STREAM })
+end
+
+-- create the lua table
+function Lexer:scalar_or_alias(node)
+	if node.value then
+		if node.anchor then
+			log("STORE ANCHOR: " .. node.anchor)
+			self.anchors[clean_key(node.anchor)] = node.value
+		end
+		return node.value
+	elseif node.alias and self.anchors[node.alias] then
+		return self.anchors[node.alias]
+	elseif node.tag then
+		return "" -- TODO handle types
+	else
+		error("no value found for node: " .. require("str").to_string(node))
+	end
 end
 
 function Lexer:__to_sequence(i)
@@ -705,18 +888,7 @@ function Lexer:__to_sequence(i)
 			i, res = self:__to_sequence(i)
 			table.insert(result, res)
 		elseif self.result[i].state == nodes.VAL then
-			if not self.result[i].value then
-				if self.result[i].alias and self.anchors[clean_key(self.result[i].alias)] then
-					table.insert(result, value(self.anchors[clean_key(self.result[i].alias)]))
-				else
-					error("no value set for sequence entry")
-				end
-			else
-				table.insert(result, value(self.result[i].value))
-				if self.result[i].anchor then
-					self.anchors[clean_key(self.result[i].anchor)] = self.result[i].value
-				end
-			end
+			table.insert(result, value(self:scalar_or_alias(self.result[i])))
 		elseif self.result[i].state == nodes.START_MAP then
 			local res
 			i, res = self:__to_map(i)
@@ -724,7 +896,7 @@ function Lexer:__to_sequence(i)
 		elseif self.result[i].state == nodes.END_SEQ then
 			return i, result
 		else
-			print("ureachable: " .. node_to_name(self.result[i].state))
+			log("ureachable: " .. node_to_name(self.result[i].state))
 		end
 		i = i + 1
 		if i > #self.result then
@@ -739,15 +911,17 @@ function Lexer:__to_map(i)
 	while true do
 		if self.result[i].state == nodes.VAL then
 			if self.result[i + 1].state == nodes.VAL then
-				result[clean_key(self.result[i].value)] = value(self.result[i + 1].value)
+				log(require("str").to_string(self.result[i]))
+				result[clean_key(self:scalar_or_alias(self.result[i]))] =
+					value(self:scalar_or_alias(self.result[i + 1]))
 				i = i + 1
 			elseif self.result[i + 1].state == nodes.START_SEQ then
-				local key = self.result[i].value
+				local key = self:scalar_or_alias(self.result[i])
 				local res
 				i, res = self:__to_sequence(i + 1)
 				result[clean_key(key)] = res
 			elseif self.result[i + 1].state == nodes.START_MAP then
-				local key = self.result[i].value
+				local key = self:scalar_or_alias(self.result[i])
 				local res
 				i, res = self:__to_map(i + 1)
 				result[clean_key(key)] = res
@@ -782,7 +956,7 @@ function Lexer:decode()
 		elseif self.result[i].state == nodes.END_DOC then
 		elseif self.result[i].state == nodes.END_STREAM then
 		elseif self.result[i].state == nodes.VAL then
-			table.insert(result, self.result[i].value)
+			table.insert(result, self:scalar_or_alias(self.result[i]))
 		elseif self.result[i].state == nodes.START_SEQ then
 			local res
 			i, res = self:__to_sequence(i)
@@ -810,21 +984,21 @@ end
 -- ---                     The Test functions                      ---
 -- -------------------------------------------------------------------
 
--- local text =
--- 	"\"top1\" : \n  \"key1\" : &alias1 scalar1\n'top2' : \n  'key2' : &alias2 scalar2\ntop3: &node3 \n  *alias1 : scalar3\ntop4: \n  *alias2 : scalar4\ntop5   :    \n  scalar5\ntop6: \n  &anchor6 'key6' : scalar6\n"
---
--- print(text)
--- print("-----")
---
--- local parser = Parser:new(text)
--- print(tostring(parser))
--- local lexer = Lexer:new(parser)
--- lexer:tree()
--- print(tostring(lexer))
--- print("Result:" .. require("str").to_string(lexer:decode()))
+-- if yalua_debug then
+-- 	local input = "? a\n? b\nc:\n"
+-- 	print("-----")
+-- 	print(input)
+-- 	local parser = Parser:new(input)
+-- 	print(tostring(parser))
+-- 	local lexer = Lexer:new(parser)
+-- 	lexer:tree()
+-- 	print(tostring(lexer))
+-- 	print("Result:" .. require("str").to_string(lexer:decode()))
+-- end
 
 return {
 	stream = function(str)
+		-- log.debug(str)
 		local parser = Parser:new(str)
 		local lexer = Lexer:new(parser)
 		lexer:tree() -- TODO: remove

@@ -1,5 +1,5 @@
 rockspec_format = "3.0"
-package = "yaml"
+package = "yalua"
 version = "scm-1"
 
 dependencies = {
@@ -11,6 +11,8 @@ test_dependencies = {
 	"luacheck",
 	"luassert",
 	"busted",
+	"rapidjson",
+	"busted-htest",
 }
 
 source = {
