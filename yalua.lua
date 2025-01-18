@@ -26,11 +26,12 @@ local log = {
 -- ---                     Utility functions                       ---
 -- -------------------------------------------------------------------
 
-local yalua_debug = true
-local function log(msg)
-	if yalua_debug then
-		print(msg)
+local function split_by_newline(str)
+	local lines = {}
+	for line in str:gmatch("[^\r\n]+") do
+		table.insert(lines, line)
 	end
+	return lines
 end
 
 local function clean_key(key)
@@ -39,10 +40,54 @@ local function clean_key(key)
 end
 
 local function value(val, tag)
+	print("XXX" .. to_string(val))
+	local function ltrim(str)
+		return string.gsub(str, "^%s+", "")
+	end
+
+	local trimmed
 	if tag == "|" or tag == ">" then
+		if type(val) == "table" then
+			local found_empty = false
+			trimmed = ""
+			for i, l in ipairs(val) do
+				if l == "" then
+					found_empty = true
+				else
+					trimmed = trimmed .. l
+				end
+				if i < #val and not found_empty then
+					trimmed = trimmed .. " "
+				else
+					trimmed = trimmed .. " "
+				end
+			end
+			trimmed = require("str").trim(trimmed)
+		else
+			trimmed = require("str").trim(val)
+		end
 		return val
 	else
-		local trimmed = require("str").trim(val)
+		if type(val) == "table" then
+			local found_empty = false
+			trimmed = ""
+			for i, l in ipairs(val) do
+				if l == "" then
+					found_empty = true
+				else
+					trimmed = trimmed .. l
+				end
+				if i < #val and not found_empty then
+					trimmed = trimmed .. " "
+				else
+					trimmed = trimmed .. " "
+				end
+			end
+			trimmed = require("str").trim(trimmed)
+		else
+			trimmed = require("str").trim(val)
+		end
+
 		if string.match(trimmed, "^['\"].*['\"]$") then
 			return string.sub(trimmed, 2, #trimmed - 1)
 		end
@@ -51,7 +96,7 @@ local function value(val, tag)
 		elseif trimmed == "false" or trimmed == "False" or trimmed == "FALSE" then
 			return false
 		end
-		return tonumber(require("str").trim(val)) or require("str").trim(val)
+		return tonumber(trimmed) or trimmed
 	end
 end
 
@@ -275,7 +320,7 @@ function Parser:__next_state(iter, state)
 	if not iter:peek() then
 		return nil
 	end
-	log(">>>" .. state_to_name(state) .. " '" .. iter:peek() .. "'")
+	-- log.debug(">>>" .. state_to_name(state) .. " '" .. iter:peek() .. "'")
 	for _, v in ipairs(transitions[state]) do
 		local peek = iter:peek(1, #v[1])
 		if peek and peek == v[1] then
@@ -305,11 +350,12 @@ end
 
 function Parser:__push(iter, state, chars, tag)
 	if chars then
+		local str = string.gsub(table.concat(chars, ""), "^%s+", "")
 		table.insert(self.result, {
 			state = state,
 			indent = self.indent,
 			anchor = self.anchor,
-			value = table.concat(chars, ""),
+			value = str,
 			row = iter.row,
 			tag = tag or self.tag,
 			col = iter.col,
@@ -346,11 +392,11 @@ end
 function Parser:__parse(str)
 	local flow = 0
 	local iter = StringIterator:new(str)
-	local next_index, next_state
+	local next_index, last_state, next_state
 	while not iter:eof() do
 		next_index, next_state = self:__next_state(iter, self.state)
 		local token = iter:get(next_index)
-		log(
+		log.debug(
 			string.format(
 				"> state: %s -> %s, from: %d, to: %d, content: '%s'",
 				state_to_name(self.state),
@@ -374,7 +420,7 @@ function Parser:__parse(str)
 			self:__collect(iter, next_state, { token })
 			self.state = states.SEQUENCE_START
 		elseif next_state == states.FLOW_DOUBLE_QUOTE then
-			local chars = iter:to_quote('"')
+			local chars = string.gmatch(table.concat(iter:to_quote('"'), ""), "[^\r\n]+")
 			self:__push(iter, states.SEQUENCE_VALUE, chars, '"')
 			next_state = states.SEQUENCE_START
 		elseif next_state == states.FLOW_SINGLE_QUOTE then
@@ -440,7 +486,7 @@ function Parser:__parse(str)
 			assert(self.alias)
 			self:__push(iter, states.SCALAR)
 		elseif next_state == states.DOUBLE_QUOTE then
-			local chars = iter:to_quote('"')
+			local chars = split_by_newline(table.concat(iter:to_quote('"'), ""))
 			self:__push(iter, states.SCALAR, chars, '"')
 			next_state = states.START
 		elseif next_state == states.SINGLE_QUOTE then
@@ -458,6 +504,17 @@ function Parser:__parse(str)
 		elseif next_state == states.NL then
 			if self.tag or self.alias then -- store tags without scalar
 				self:__push(iter, states.SCALAR)
+			end
+			if iter:peek() == "\n" or iter:peek() == "\r" then
+				if
+					self.index > 0
+					and (self.result[#self.result].state == states.SCALAR and self.result[#self.indent] > 0)
+				then
+					local scalar = table.concat(self.chars, "")
+					scalar = string.gsub(str, "^%s+", "") -- TODO: eventually remove, is in value
+					log.debug("left", table.concat(self.chars), "right", scalar)
+					self:__push(iter, states.SCALAR, { scalar })
+				end
 			end
 			if flow == 0 then
 				self.state = states.START
@@ -513,7 +570,7 @@ function Lexer:__match(pattern)
 		return false
 	end
 	local pos = self.index + 1
-	for i, p in ipairs(pattern) do
+	for _, p in ipairs(pattern) do
 		if p ~= self.tokens[pos].state then
 			return false
 		end
@@ -527,7 +584,6 @@ function Lexer:__tostring()
 	local indent = 0
 	local val_type
 	for _, line in ipairs(self.result) do
-		log(require("str").to_string(line))
 		if line.state == nodes.START_STREAM then
 			table.insert(result, string.format("%s+STR", string.rep(" ", indent)))
 			indent = indent + 1
@@ -624,7 +680,6 @@ function Lexer:eof()
 end
 
 function Lexer:__copy(node, state, t)
-	log("copy: " .. to_string(node))
 	table.insert(self.result, {
 		state = state,
 		type = t,
@@ -655,7 +710,7 @@ function Lexer:__flow_map()
 end
 
 function Lexer:__flow_sequence()
-	log(">FLOW SEQUENCE")
+	log.debug(">FLOW SEQUENCE")
 	table.insert(self.result, { state = nodes.START_SEQ, type = "flow", tag = "[]" })
 	self:next()
 	while not self:eof() do
@@ -686,7 +741,7 @@ function Lexer:__flow()
 			depth = depth - 1
 			self:next()
 		else
-			log("[TRACE] unexpected flow child: " .. state_to_name(self:peek().state))
+			log.debug("[TRACE] unexpected flow child: " .. state_to_name(self:peek().state))
 			break
 		end
 		if depth == 0 then
@@ -696,7 +751,7 @@ function Lexer:__flow()
 end
 
 function Lexer:__map()
-	log(
+	log.debug(
 		">map: "
 			.. self:peek().indent
 			.. " "
@@ -713,36 +768,52 @@ function Lexer:__map()
 	local indent = self:peek().indent
 	table.insert(self.result, { state = nodes.START_MAP })
 	while not self:eof() do
-		log(" : " .. state_to_name(self:peek().state) .. " " .. indent .. " -> " .. self:peek().indent)
+		log.debug(" : " .. state_to_name(self:peek().state) .. " " .. indent .. " -> " .. self:peek().indent)
 		if self:peek().indent < indent then
-			log("!map break")
+			log.debug("!map break")
 			break
 		end
 		if self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR, states.MAPPING_VALUE }) then
-			log("Match map with map")
+			log.debug("Match map with map")
 			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__map()
-		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR }) then
-			log("Match map with scalar: " .. (self:peek().value or "nil"))
-			self:__copy(self:next(), nodes.VAL)
-			self:next()
-			self:__copy(self:next(), nodes.VAL)
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SEQUENCE_ENTRY }) then
-			log("Match map with sequence: " .. self:peek().value)
+			log.debug("Match map with sequence: " .. self:peek().value)
 			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__collection()
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.MAPPING_START }) then
-			log("Match map with flow")
+			log.debug("Match map with flow")
 			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__flow()
 		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SEQUENCE_START }) then
-			log("Match map with flow sequence")
+			log.debug("Match map with flow sequence")
 			self:__copy(self:next(), nodes.VAL)
 			self:next()
 			self:__flow()
+		elseif self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR }) then
+			log.debug("Match map with scalar: " .. (self:peek().value or "nil"))
+			self:__copy(self:next(), nodes.VAL)
+			self:next()
+			-- collect lines
+			local next = self:next()
+			assert(next)
+			local lines = { next.value }
+			while true do
+				if self:__match({ states.SCALAR, states.MAPPING_VALUE, states.SCALAR }) then
+					break
+				elseif self:peek() and self:peek().state == states.SCALAR then
+					print("add line: " .. self:peek().value)
+					table.insert(lines, self:next().value)
+				else
+					break
+				end
+			end
+			print("insert lines:" .. to_string(lines))
+			next.value = lines
+			self:__copy(next, nodes.VAL)
 		-- elseif self.tokens[self.index + 2] == states.MAPPING_VALUE and self.index + 3 > #self.tokens then
 		-- 	error(
 		-- 		"unknown match for map: "
@@ -754,7 +825,7 @@ function Lexer:__map()
 		-- 			.. "]"
 		-- 	)
 		else
-			log(
+			log.debug(
 				"unknown match for map: "
 					.. state_to_name(self:peek().state)
 					.. "/"
@@ -772,16 +843,16 @@ function Lexer:__map()
 		end
 	end
 	table.insert(self.result, { state = nodes.END_MAP })
-	log("<map")
+	log.debug("<map")
 end
 
 function Lexer:__collection()
-	log("collection")
+	log.debug("collection")
 	local indent = -1 -- TODO self:peek().indent
-	log("SEQUENCE_INDENT: " .. indent)
+	log.debug("SEQUENCE_INDENT: " .. indent)
 	table.insert(self.result, { state = nodes.START_SEQ })
 	while not self:eof() do
-		log("  > " .. state_to_name(self:peek().state) .. " " .. indent .. " > " .. self:peek().indent)
+		log.debug("  > " .. state_to_name(self:peek().state) .. " " .. indent .. " > " .. self:peek().indent)
 		if indent == -1 and self:peek().indent > 0 then
 			indent = self:peek().indent
 		elseif indent > self:peek().indent then
@@ -793,7 +864,7 @@ function Lexer:__collection()
 			self:__map()
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SCALAR }) then
 			self:next()
-			log("Match collection with scalar: " .. (self:peek().value or "nil"))
+			log.debug("Match collection with scalar: " .. (self:peek().value or "nil"))
 			self:__copy(self:next(), nodes.VAL)
 		elseif self:__match({ states.SEQUENCE_ENTRY, states.SEQUENCE_ENTRY }) then
 			self:next()
@@ -809,11 +880,11 @@ function Lexer:__collection()
 		end
 	end
 	table.insert(self.result, { state = nodes.END_SEQ })
-	log("<collection")
+	log.debug("<collection")
 end
 
 function Lexer:tree()
-	log("== Lexer")
+	log.debug("== Lexer")
 	table.insert(self.result, { state = nodes.START_STREAM })
 	if self:peek().state ~= states.START_DOC then
 		table.insert(self.result, { state = nodes.START_DOC })
@@ -865,7 +936,7 @@ end
 function Lexer:scalar_or_alias(node)
 	if node.value then
 		if node.anchor then
-			log("STORE ANCHOR: " .. node.anchor)
+			log.debug("STORE ANCHOR: " .. node.anchor)
 			self.anchors[clean_key(node.anchor)] = node.value
 		end
 		return node.value
@@ -896,7 +967,7 @@ function Lexer:__to_sequence(i)
 		elseif self.result[i].state == nodes.END_SEQ then
 			return i, result
 		else
-			log("ureachable: " .. node_to_name(self.result[i].state))
+			error("ureachable: " .. node_to_name(self.result[i].state))
 		end
 		i = i + 1
 		if i > #self.result then
@@ -911,7 +982,7 @@ function Lexer:__to_map(i)
 	while true do
 		if self.result[i].state == nodes.VAL then
 			if self.result[i + 1].state == nodes.VAL then
-				log(require("str").to_string(self.result[i]))
+				log.debug(require("str").to_string(self.result[i]))
 				result[clean_key(self:scalar_or_alias(self.result[i]))] =
 					value(self:scalar_or_alias(self.result[i + 1]))
 				i = i + 1
@@ -984,8 +1055,8 @@ end
 -- ---                     The Test functions                      ---
 -- -------------------------------------------------------------------
 
--- if yalua_debug then
--- 	local input = "? a\n? b\nc:\n"
+-- if debug then
+-- 	local input = 'plain:\n  This unquoted scalar\n  spans many lines.\n\nquoted: "So does this\n  quoted scalar.\\n"\n'
 -- 	print("-----")
 -- 	print(input)
 -- 	local parser = Parser:new(input)
@@ -993,13 +1064,15 @@ end
 -- 	local lexer = Lexer:new(parser)
 -- 	lexer:tree()
 -- 	print(tostring(lexer))
--- 	print("Result:" .. require("str").to_string(lexer:decode()))
+-- 	-- print("Result:" .. require("str").to_string(lexer:decode()))
 -- end
 
 return {
 	stream = function(str)
 		-- log.debug(str)
+		log.debug(tostring(str))
 		local parser = Parser:new(str)
+		log.debug(tostring(parser))
 		local lexer = Lexer:new(parser)
 		lexer:tree() -- TODO: remove
 		return tostring(lexer)

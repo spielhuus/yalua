@@ -11,16 +11,52 @@
 this is a pure lua implentation of a YAML parser. the yaml.lua file is self contained. 
 
 ```lua
-chars = {1, 2, 3, 4, 5, 6}
-print(table.concat(chars, ",", 4))
+
+function trim(s, preserve_linebreaks) 
+ if preserve_linebreaks then 
+  return s:gsub("^[ \t\v\f]*(.-)[ \t\v\f]*$", "%1")
+ else 
+  return (s:gsub("^%s*(.-)%s*$", "%1")) 
+ end 
+end 
+
+a = "  aa bb cc \n  "
+print("'" .. trim(a) .. "'")
+```
+
+```lua
+a = false
+b = " s"
+c = "a\n"
+if not a and (b == " " or c == "\n") then
+    print("YEP")
+else 
+    print("NOPE")
+end
+```
+
+
+```lua
+
+str = "foo: bar\nfoz: baz"
+print(string.match(str, "^([%w-]+)(:%s)", 1))
+print(string.match(str, "^(:%s)", 1))
+-- res = string.match(str, "^%d", 10)
+-- print(res)
+
 ```
 
 ```py
 import yaml
 
-# data = "- [ \"name        \",\"hr\", avg  ]\n- [Mark McGwire, 65, 0.278]\n- [Sammy Sosa  , 63, 0.288]\n"
-data = "foo: \"foo boz\n  baz\n   rrrr\n      xxx\""
+data = """
+- - s1_i1 #comment
+  - s1_i2
+- s2
+"""
+
 parsed = yaml.safe_load(data)
+
 print(parsed)
 
 ```

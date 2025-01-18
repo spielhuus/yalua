@@ -1,0 +1,769 @@
+local trim = require("str").trim
+
+local Lexer = {}
+
+local Token = {}
+
+-- local print = function(...) end
+
+---@class Token
+function Token:new(state, row, col, indent, c, anchor, alias, tag)
+	local o = {}
+	self.__index = self
+	setmetatable(o, self)
+	o.state = state
+	o.row = row
+	o.col = col
+	o.indent = indent
+	o.c = c
+	o.anchor = anchor
+	o.alias = alias
+	o.tag = tag
+	return o
+end
+
+function Lexer:new(doc)
+	local o = {}
+	self.__index = self
+	setmetatable(o, self)
+	o.str = doc
+	o.tokens = {}
+	o.index = 0
+	o.row = 1
+	o.col = 0
+	o.line_start = true
+	o.indent = 0
+	o.chars = {}
+	o.anchor = nil
+	o.alias = nil
+	o.tag = nil
+	o.flow_level = 0
+	o:parse()
+	return o
+end
+
+local function __or(self, rules)
+	local state, fn
+	for _, rule in ipairs(rules) do
+		state, fn = rule(self)
+		if state > 0 then
+			return state, fn
+		end
+	end
+	return 0, nil
+end
+
+function Lexer:__peek_char(n)
+	n = n or 1
+	if self.index + n > #self.str then
+		return nil
+	end
+	return string.sub(self.str, self.index + n, self.index + n)
+end
+
+function Lexer:__skip_space()
+	if self:__peek_char() == " " then
+		self:__next_char()
+	end
+	return 0
+end
+
+function Lexer:__nl()
+	if self:__peek_char() == "\n" then
+		self:__next_char()
+		return 1
+	end
+	return 0
+end
+
+function Lexer:__next_char()
+	self.index = self.index + 1
+	if self.index > #self.str then
+		return nil
+	end
+	self.col = self.col + 1
+	local char = string.sub(self.str, self.index, self.index)
+	if char == "\n" or char == "\r" then
+		if self.index + 1 > #self.str and char == "\r" and char == "\n" then
+			self.index = self.index + 1
+		end
+		self.col = 0
+		self.row = self.row + 1
+		return "\n"
+	end
+	return char
+end
+
+function Lexer:__push(state, c)
+	local token = Token:new(state, self.row, self.col, self.indent, c, self.anchor, self.alias, self.tag)
+	if state ~= "NL" then
+		self.anchor = nil
+		self.alias = nil
+		self.tag = nil
+	end
+	table.insert(self.tokens, token)
+end
+
+function Lexer:__match(...)
+	local args = { ... }
+	if self.index + #args > #self.str then
+		return false
+	end
+	for i, arg in ipairs(args) do
+		if string.sub(self.str, self.index + i, self.index + i) ~= arg then
+			return false
+		end
+	end
+
+	return true
+end
+
+function Lexer:__eof()
+	return self.index >= #self.str
+end
+
+function Lexer:__eol()
+	if self:__peek_char() == "\n" then
+		return true
+	elseif self:__peek_char() == "\r" then
+		return true
+	else
+		return false
+	end
+end
+
+-- ---------------------------------------------------------------------------------
+-- ---                       the parser functions                                ---
+-- ---------------------------------------------------------------------------------
+
+function Lexer:skip_ws()
+	if self:__match(" ") or self:__match("\n") then
+		print("skip ws '" .. self:__peek_char() .. "'")
+		while not self:__eol() and (self:__peek_char() == " " or self:__peek_char() == "\n") do
+			self:__next_char()
+		end
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:add_char()
+	if self:__eol() or self:__eof() then
+		return 0
+	elseif #self.chars == 0 and (self:__peek_char() == '"' or self:__peek_char() == "'") then
+		self.tag = self:__peek_char()
+		self:quote()
+		return 0
+	else
+		table.insert(self.chars, self:__next_char())
+		return 0
+	end
+end
+
+function Lexer:char()
+	while not self:__eol() do
+		table.insert(self.chars, self:__next_char())
+	end
+	return 1
+end
+
+-- function Lexer:comment()
+-- 	if self:__match("#") then
+-- 		print("comment chars '", table.concat(self.chars, "'"))
+-- 		while not self:__eol() do
+-- 			self:__next_char()
+-- 		end
+-- 		self:__next_char()
+-- 		return 1
+-- 	elseif self:__match(" ", "#") then -- TODO: space handling
+-- 		print("comment chars with space'", table.concat(self.chars, "'"))
+-- 		while not self:__eol() do
+-- 			self:__next_char()
+-- 		end
+-- 		return 1
+-- 	else
+-- 		return 0
+-- 	end
+-- end
+
+function Lexer:__anchor()
+	if self:__match("&") then
+		print("anchor:" .. self:__peek_char())
+		local anchor = {}
+		self:__next_char()
+		while not self:__eol() and not self:__eof() and self:__peek_char() ~= " " do
+			table.insert(anchor, self:__next_char())
+		end
+		self.anchor = table.concat(anchor, "")
+		local res = __or(self, {
+			self.line_comment,
+			self.scalar,
+		})
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:__alias()
+	if self:__match("*") then
+		local alias = {}
+		self:__next_char()
+		while not self:__eol() and not self:__eof() and self:__peek_char() ~= " " do
+			table.insert(alias, self:__next_char())
+		end
+		self.alias = table.concat(alias, "")
+		self:__push("CHAR", nil)
+		local res = __or(self, {
+			self.line_comment,
+		})
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:quote()
+	if self:__match('"') or self:__match("'") then
+		local quote = self:__next_char()
+		print("quote is : " .. quote .. "->" .. self:__peek_char())
+		self.chars = {}
+		while not self:__eof() and self:__peek_char() ~= quote do
+			if self:__peek_char() == "\n" then
+				self:__next_char()
+				self.tag = quote
+				self:__push("CHAR", table.concat(self.chars, ""))
+				self.chars = {}
+			elseif self:__peek_char() == "\\" then
+				local bslash = self:__next_char()
+				if self:__peek_char() == "n" then
+					print("found nl")
+					self:__next_char()
+					table.insert(self.chars, "\n")
+				else
+					table.insert(self.chars, bslash)
+					table.insert(self.chars, self:__next_char())
+				end
+			else
+				table.insert(self.chars, self:__next_char())
+			end
+		end
+		self.tag = quote
+		self:__push("CHAR", table.concat(self.chars, ""))
+		self.chars = {}
+		self:__next_char()
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:__tag()
+	if self:__match("!", "!") then -- TODO match also other tags
+		local _tag = {}
+		while self:__peek_char() ~= " " and self:__peek_char() ~= "\n" do
+			table.insert(_tag, self:__next_char())
+		end
+		self.tag = table.concat(_tag, "")
+		local res = __or(self, {
+			self.scalar,
+		})
+
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:folded()
+	if self:__match(">") then
+		print("folded")
+		self:__next_char()
+		self.tag = ">"
+		self:__skip_space()
+		return self:__nl()
+	elseif self:__match(" ", ">") then -- TODO: space handling
+		print("old folded")
+		self:__next_char()
+		self:__next_char()
+		self.tag = ">"
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:literal()
+	if self:__match("|") then
+		print("literal")
+		self:__next_char()
+		self.tag = "|"
+		return 1
+	elseif self:__match(" ", "|") then -- TODO: space handling
+		print("literal")
+		self:__next_char()
+		self:__next_char()
+		self.tag = "|"
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:__indent()
+	if self:__match(" ") then
+		self:__next_char()
+		self.indent = self.indent + 1
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:directive()
+	if self:__match("%") then
+		while not self:__eof() and not self:__eol() do
+			self:__next_char()
+		end
+		return 1
+	else
+		return 0
+	end
+end
+
+--------------------------------------------------------------------------------
+---                            The utils functions                           ---
+--------------------------------------------------------------------------------
+
+--- While function that detects infinite loops
+---@param f function the function, must return 0, 1
+---@return integer the value passed by the callback function
+function Lexer:__while(f)
+	local res = 0
+	while not self:__eof() and res == 0 do
+		local old_col = self.col
+		local old_row = self.row
+		res = f()
+		if res == 0 and self.col == old_col and self.row == old_row then
+			error("nothing found @ " .. self.row .. ":" .. self.col .. " '" .. self:__peek_char() .. "'") -- TODO
+		end
+	end
+	return res
+end
+
+---Remove all white space characters
+---@param nl boolean if true it will also remove the line breaks
+function Lexer:ws(nl)
+	while not self:__eof() do
+		if self:__peek_char() == " " then
+			self:__next_char()
+		elseif nl and self:__peek_char() == "\n" then
+			self:__next_char()
+		else
+			break
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+---                           The parser functions                           ---
+--------------------------------------------------------------------------------
+
+--- flow type
+
+function Lexer:flow()
+	if self:__match("{") or self:__match("[") then
+		print("start_flow")
+		self.flow_level = 0
+		local res = self:__while(function()
+			print("loop flow: " .. self:__peek_char())
+			local inner_res = __or(self, {
+				-- self.flow_sep,
+				self.flow_seq_start,
+				self.flow_map_start,
+				self.add_char,
+				self.__nl,
+			})
+			print("FLOW:" .. inner_res .. ":" .. self.flow_level)
+			if inner_res == 1 and self.flow_level == 0 then
+				return 1
+			else
+				return 0
+			end
+		end)
+		print("flow res: " .. res)
+		return res
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_sep()
+	if self:__match(",") then
+		print(string.rep(" ", self.flow_level) .. "SEP +FLOW VALUE=" .. table.concat(self.chars, "") .. "'")
+		self:__push("VAL", table.concat(self.chars, ""))
+		self.chars = {}
+		self:__next_char()
+		self:ws(true)
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_map_start()
+	if self:__match("{") then
+		self.flow_level = self.flow_level + 1
+		print("map start: " .. self.flow_level .. "'" .. self:__peek_char() .. "'")
+		self.tag = "{}"
+		self:__push("START_FLOW_MAP")
+		self:__next_char()
+		self:ws(true)
+		local res = 0
+		self:__while(function()
+			print("next" .. self:__peek_char())
+			res = __or(self, {
+				self.flow_map_start,
+				self.flow_map_end,
+				self.flow_seq_start,
+				self.flow_map_value,
+				self.add_char,
+			})
+			return res
+		end)
+		print("MAP RES: " .. self.flow_level .. " " .. table.concat(self.chars, ""))
+		if res == 1 and self.flow_level == 0 then
+			return 1
+		else
+			return 0
+		end
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_map_value()
+	if self:__match(":", " ") then
+		print("KEY: " .. table.concat(self.chars, ""))
+		self:__push("KEY", table.concat(self.chars, ""))
+		self.chars = {}
+		self:__next_char()
+		local res = self:__while(function()
+			local res = __or(self, {
+				self.add_char,
+				self.flow_sep,
+				self.flow_seq_start,
+				self.flow_map_start,
+				self.flow_map_end,
+				self.__nl,
+			})
+			return res
+		end)
+		if res == 1 and self.flow_level == 0 then
+			return 1
+		else
+			return 0
+		end
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_map_end()
+	if self:__match("}") then
+		self.flow_level = self.flow_level - 1
+		print(" map end")
+		if #self.chars > 0 then
+			self:__push("VAL", table.concat(self.chars, ""))
+		end
+		self.chars = {}
+		self.tag = "{}"
+		self:__push("END_FLOW_MAP")
+		self:__next_char()
+		self:__while(function()
+			__or(self, {
+				self.skip_ws,
+				self.__nl,
+			})
+		end)
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_seq_value()
+	print(string.rep(" ", self.flow_level) .. "flow_seq_value: " .. self:__peek_char())
+	self:ws(true)
+	local res = 0
+	self:__while(function()
+		res = __or(self, {
+			self.flow_seq_end,
+			self.flow_sep,
+			self.add_char,
+		})
+		return res
+	end)
+	print(string.rep(" ", self.flow_level) .. "flow_seq_value: --> " .. res)
+	return res
+end
+
+function Lexer:flow_seq_start()
+	if self:__match("[") then
+		print(string.rep(" ", self.flow_level) .. "flow_seq_start(" .. self:__peek_char() .. ")")
+		self.flow_level = self.flow_level + 1
+		self.tag = "[]"
+		self:__push("START_FLOW_SEQ")
+		self:__next_char()
+		self:ws(true)
+		local res = 0
+		self:__while(function()
+			print(string.rep(" ", self.flow_level) .. "flow_seq_start>>loop" .. self:__peek_char())
+			res = __or(self, {
+				self.flow_map_start,
+				self.flow_seq_start,
+				self.flow_seq_end,
+				self.flow_seq_value,
+			})
+
+			if res == 1 and self.flow_level == 0 then
+				return 1
+			else
+				return 0
+			end
+		end)
+		print(string.rep(" ", self.flow_level) .. "<flow_seq_start -> " .. res)
+		return res
+	else
+		return 0
+	end
+end
+
+function Lexer:flow_seq_end()
+	if self:__match("]") then
+		self.flow_level = self.flow_level - 1
+		print("seq end")
+		if #self.chars > 0 then
+			self:__push("VAL", table.concat(self.chars, ""))
+		end
+		self.chars = {}
+		self.tag = "[]"
+		self:__push("END_FLOW_SEQ")
+		self:__next_char()
+		self:__while(function()
+			__or(self, {
+				self.skip_ws,
+				self.__nl,
+			})
+		end)
+		return 1
+	else
+		return 0
+	end
+end
+
+--- ---                                       YAML types                                            ---
+
+function Lexer:line_comment()
+	print("comment: " .. self.col .. " '" .. self:__peek_char() .. "'")
+	if (self.col == 0 and self:__match("#")) or (self:__peek_char(0) == " " and self:__peek_char() == "#") then
+		print("comment chars '", table.concat(self.chars, ""), "'")
+		self:__while(function()
+			self:__next_char()
+			return (not self:__eol() and 0 or 1)
+		end)
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:mapping_value()
+	if self:__match(":", " ") or self:__match(":", "\n") then
+		self:__next_char()
+		self:ws(false)
+		local res = 0
+		self:__push("KEY", table.concat(self.chars, ""))
+		self.chars = {}
+		self:__while(function()
+			res = __or(self, {
+				self.literal,
+				self.folded,
+				self.line_comment,
+				self.flow,
+				self.add_char,
+				self.__nl,
+			})
+			return res
+		end)
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:scalar()
+	print("scalar: indent:" .. self.indent)
+	self:__while(function()
+		local _res = __or(self, {
+			self.mapping_value,
+			self.line_comment,
+			self.__nl,
+			self.add_char,
+		})
+		return _res
+	end)
+	if #self.chars > 0 then
+		print("SCALAR:" .. self.indent .. "'" .. table.concat(self.chars, "") .. "'")
+		self:__push("CHAR", table.concat(self.chars, ""))
+		self:__push("NL")
+		self.chars = {}
+	end
+	return 1
+end
+
+function Lexer:sequence()
+	if self:__match("-", "\n") then
+		self:__next_char()
+		self:__push("DASH")
+		return 1
+	elseif self:__match("-", " ") then
+		self:__next_char()
+		self:__next_char()
+		self:__push("DASH")
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:start_doc()
+	if self:__match("-", "-", "-") then
+		self:__next_char()
+		self:__next_char()
+		self:__next_char()
+		self:__push("START_DOC")
+		self:ws(true)
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:end_doc()
+	if self:__match(".", ".", ".") then
+		self:__next_char()
+		self:__next_char()
+		self:__next_char()
+		self:__push("END_DOC")
+		__or(self, {
+			self.skip_ws,
+			self.__nl,
+		})
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:line()
+	print("line chars: " .. #self.chars)
+	local res = 0
+	self:__while(function()
+		self.indent = 0
+		while self:__indent() == 1 do
+		end
+		print(
+			"start line row:" .. self.row .. ", indent:" .. self.indent .. ", first char:'" .. self:__peek_char() .. "'"
+		)
+		self:ws(false)
+		res = __or(self, {
+			self.start_doc,
+			self.end_doc,
+			self.sequence,
+			self.line_comment,
+			self.directive,
+			self.literal,
+			self.folded,
+			self.flow,
+			self.__tag,
+			self.__anchor,
+			self.__alias,
+			self.scalar,
+		})
+		return res
+	end)
+	return res
+end
+
+function Lexer:parse()
+	self:__while(function()
+		local res = self:line()
+		print("<" .. res .. ":" .. self.row .. ":" .. self.col)
+		if self:__peek_char() == "\n" then
+			self:__next_char()
+		end
+		return 0
+	end)
+end
+
+--- Get the line from the docment
+--- @param line_num integer number 1 based
+function Lexer:get_line(line_num)
+	local lines = {}
+	for line in self.str:gmatch("[^\r?\n]+") do
+		table.insert(lines, line)
+	end
+	if line_num < 1 or line_num > #lines then
+		return nil
+	end
+	return lines[line_num]
+end
+
+function Lexer:__tostring()
+	local str = {}
+	table.insert(str, "state           | tag    | anchor | alias  | indent | row | col | value")
+	table.insert(str, "----------------|--------|--------|--------|--------|-----|-------")
+	for _, item in ipairs(self.tokens) do
+		table.insert(
+			str,
+			string.format(
+				"%-15s | %-5s  | %-5s  | %-5s  | %-6d | %-3d | %-3d | '%s'",
+				item.state,
+				(item.tag or ""),
+				(item.anchor or ""),
+				(item.alias or ""),
+				item.indent,
+				item.row,
+				item.col,
+				item.c or ""
+			)
+		)
+	end
+	return table.concat(str, "\n")
+end
+
+-- local function trace(event, line)
+-- 	local info = debug.getinfo(2, "nSl")
+-- 	local name = info.name or "unknown"
+-- 	local src = info.short_src
+-- 	local line = info.currentline
+-- 	print(event, name, src, line)
+-- end
+-- debug.sethook(trace, "cr")
+
+local input = [[
+hr:
+  - Mark McGwire
+  # Following node labeled SS
+  - &SS Sammy Sosa
+rbi:
+  - *SS # Subsequent occurrence
+  - Ken Griffey
+]]
+-- print("---\n" .. input .. "\n---")
+-- local lexer = Lexer:new(input)
+-- print(tostring(lexer))
+
+return Lexer
