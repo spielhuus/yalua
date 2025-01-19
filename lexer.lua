@@ -38,6 +38,7 @@ function Lexer:new(doc)
 	o.alias = nil
 	o.tag = nil
 	o.flow_level = 0
+	o.state = nil
 	o:parse()
 	return o
 end
@@ -168,25 +169,6 @@ function Lexer:char()
 	return 1
 end
 
--- function Lexer:comment()
--- 	if self:__match("#") then
--- 		print("comment chars '", table.concat(self.chars, "'"))
--- 		while not self:__eol() do
--- 			self:__next_char()
--- 		end
--- 		self:__next_char()
--- 		return 1
--- 	elseif self:__match(" ", "#") then -- TODO: space handling
--- 		print("comment chars with space'", table.concat(self.chars, "'"))
--- 		while not self:__eol() do
--- 			self:__next_char()
--- 		end
--- 		return 1
--- 	else
--- 		return 0
--- 	end
--- end
-
 function Lexer:__anchor()
 	if self:__match("&") then
 		print("anchor:" .. self:__peek_char())
@@ -195,9 +177,11 @@ function Lexer:__anchor()
 		while not self:__eol() and not self:__eof() and self:__peek_char() ~= " " do
 			table.insert(anchor, self:__next_char())
 		end
+		self:__next_char()
 		self.anchor = table.concat(anchor, "")
 		local res = __or(self, {
 			self.line_comment,
+			self.flow,
 			self.scalar,
 		})
 		return 1
@@ -229,8 +213,15 @@ function Lexer:quote()
 		local quote = self:__next_char()
 		print("quote is : " .. quote .. "->" .. self:__peek_char())
 		self.chars = {}
-		while not self:__eof() and self:__peek_char() ~= quote do
-			if self:__peek_char() == "\n" then
+		while not self:__eof() do
+			if self:__peek_char() == quote then
+				self:__next_char()
+				if self:__peek_char() == quote then
+					table.insert(self.chars, self:__next_char())
+				else
+					break
+				end
+			elseif self:__peek_char() == "\n" then
 				self:__next_char()
 				self.tag = quote
 				self:__push("CHAR", table.concat(self.chars, ""))
@@ -252,7 +243,7 @@ function Lexer:quote()
 		self.tag = quote
 		self:__push("CHAR", table.concat(self.chars, ""))
 		self.chars = {}
-		self:__next_char()
+		-- self:__next_char()
 		return 1
 	else
 		return 0
@@ -270,6 +261,13 @@ function Lexer:__tag()
 			self.scalar,
 		})
 
+		return 1
+	elseif self:__match("!") then
+		local _tag = {}
+		while self:__peek_char() ~= " " and self:__peek_char() ~= "\n" do
+			table.insert(_tag, self:__next_char())
+		end
+		self.tag = table.concat(_tag, "")
 		return 1
 	else
 		return 0
@@ -566,9 +564,7 @@ end
 --- ---                                       YAML types                                            ---
 
 function Lexer:line_comment()
-	print("comment: " .. self.col .. " '" .. self:__peek_char() .. "'")
 	if (self.col == 0 and self:__match("#")) or (self:__peek_char(0) == " " and self:__peek_char() == "#") then
-		print("comment chars '", table.concat(self.chars, ""), "'")
 		self:__while(function()
 			self:__next_char()
 			return (not self:__eol() and 0 or 1)
@@ -586,6 +582,12 @@ function Lexer:mapping_value()
 		local res = 0
 		self:__push("KEY", table.concat(self.chars, ""))
 		self.chars = {}
+
+		res = __or(self, {
+			self.__anchor,
+			self.__alias,
+		})
+		print("found anchor: " .. res)
 		self:__while(function()
 			res = __or(self, {
 				self.literal,
@@ -593,7 +595,7 @@ function Lexer:mapping_value()
 				self.line_comment,
 				self.flow,
 				self.add_char,
-				self.__nl,
+				self.__nl, -- TODO: this should be unreachable
 			})
 			return res
 		end)
@@ -621,6 +623,35 @@ function Lexer:scalar()
 		self.chars = {}
 	end
 	return 1
+end
+
+function Lexer:mapping_key()
+	if self:__match("?", " ") then
+		self:__next_char()
+		self:__next_char()
+		self:__push("CKEY")
+		self.state = "CKEY"
+		self.old_indent = self.indent
+		return 1
+	else
+		return 0
+	end
+end
+
+function Lexer:cmapping_value()
+	if
+		self.state == "CKEY"
+		and self.old_indent <= self.indent
+		and (self:__match(":", " ") or self:__match(":", "\n"))
+	then
+		self:__push("CVALUE")
+		self.state = nil
+		self.old_indent = nil
+		self:__next_char()
+		return 1
+	else
+		return 0
+	end
 end
 
 function Lexer:sequence()
@@ -690,6 +721,8 @@ function Lexer:line()
 			self.__tag,
 			self.__anchor,
 			self.__alias,
+			self.mapping_key,
+			self.cmapping_value,
 			self.scalar,
 		})
 		return res
@@ -698,11 +731,27 @@ function Lexer:line()
 end
 
 function Lexer:parse()
+	if self:__peek_char() == "%" then
+		local tag_chars = {}
+		while not self:__eol() do
+			table.insert(tag_chars, self:__next_char())
+		end
+		local tag = table.concat(tag_chars, "")
+		print("'" .. (string.match(tag, "^%%TAG ! (.-)$") or "nil") .. "'")
+		if string.match(tag, "^%%TAG ! (.-)$") then
+			local tag_uri = string.match(tag, "^%%TAG ! (.-)$")
+			self:__push("GLOBAL_TAG", tag_uri)
+			print("found global tag definition: " .. tag_uri)
+		else
+			print("found other tag definition: '" .. tag .. "'")
+		end
+	end
 	self:__while(function()
 		local res = self:line()
 		print("<" .. res .. ":" .. self.row .. ":" .. self.col)
 		if self:__peek_char() == "\n" then
 			self:__next_char()
+			self:__push("NL")
 		end
 		return 0
 	end)
@@ -723,13 +772,13 @@ end
 
 function Lexer:__tostring()
 	local str = {}
-	table.insert(str, "state           | tag    | anchor | alias  | indent | row | col | value")
-	table.insert(str, "----------------|--------|--------|--------|--------|-----|-------")
+	table.insert(str, "state           | tag       | anchor    | alias     | indent | row | col | value")
+	table.insert(str, "----------------|-----------|-----------|-----------|--------|-----|-----|----------------")
 	for _, item in ipairs(self.tokens) do
 		table.insert(
 			str,
 			string.format(
-				"%-15s | %-5s  | %-5s  | %-5s  | %-6d | %-3d | %-3d | '%s'",
+				"%-15s | %-8s  | %-8s  | %-8s  | %-6d | %-3d | %-3d | '%s'",
 				item.state,
 				(item.tag or ""),
 				(item.anchor or ""),
@@ -744,26 +793,36 @@ function Lexer:__tostring()
 	return table.concat(str, "\n")
 end
 
--- local function trace(event, line)
--- 	local info = debug.getinfo(2, "nSl")
--- 	local name = info.name or "unknown"
--- 	local src = info.short_src
--- 	local line = info.currentline
--- 	print(event, name, src, line)
--- end
--- debug.sethook(trace, "cr")
-
 local input = [[
-hr:
-  - Mark McGwire
-  # Following node labeled SS
-  - &SS Sammy Sosa
-rbi:
-  - *SS # Subsequent occurrence
-  - Ken Griffey
+---
+Time: 2001-11-23 15:01:42 -5
+User: ed
+Warning:
+  This is an error message
+  for the log file
+---
+Time: 2001-11-23 15:02:31 -5
+User: ed
+Warning:
+  A slightly different error
+  message.
+---
+Date: 2001-11-23 15:03:17 -5
+User: ed
+Fatal:
+  Unknown variable "bar"
+Stack:
+- file: TopClass.py
+  line: 23
+  code: |
+    x = MoreObject("345\n")
+- file: MoreClass.py
+  line: 58
+  code: |-
+    foo = bar
 ]]
--- print("---\n" .. input .. "\n---")
--- local lexer = Lexer:new(input)
--- print(tostring(lexer))
+
+local l = Lexer:new(input)
+print(tostring(l))
 
 return Lexer

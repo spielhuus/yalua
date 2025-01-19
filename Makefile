@@ -26,7 +26,8 @@ luacheck: ## Run luackeck
 
 test: $(LUA_FILES) $(SPEC_FILES) ## Run the tests
 	#$(LUAROCKS) --lua-version 5.1 --tree $(LUA_TREE) test -- --exclude-tags "suite,json"
-	busted spec/testsuite/tree_spec.lua --tags "FQ7F,SYW4,PBJ2,229Q,YD5X,ZF4X,JHB9,U9NS,J9HZ,7BUB,x,9U5K,6JQW,96L6,x,HMK4,3ALJ,33X3,27NA,4CQQ,2EBW,35KP"
+	# last test is 2.11
+	busted spec/testsuite/tree_spec.lua --tags "JHB9,J7PZ,ZF4X,96L6,2XXW,SYW4,6VJK,U9NS,9U5K,HMK4,M5DY,6JQW,PBJ2,229Q,RZT7,G4RS,C4HZ,J9HZ,7BUB,UGM3,YD5X,FQ7F,4CQQ"
 
 suite:
 	busted spec/testsuite/tree_spec.lua --exclude-tags "C4HZ,PW8X,SM9W,U3C3"

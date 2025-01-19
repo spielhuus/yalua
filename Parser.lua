@@ -27,14 +27,24 @@ local log = {
 	end,
 }
 
-local function schema(node)
-	print("GetValue:" .. to_string(node))
-	if node.tag == "!!int" then
-		return tonumber(node.value)
-	else
-		return node.value
+local function utf8(codepoint)
+	if codepoint <= 0x7F then
+		return string.char(codepoint)
+	elseif codepoint <= 0x7FF then
+		return string.char(0xC0 + (codepoint / 64), 0x80 + (codepoint % 64))
+	elseif codepoint <= 0xFFFF then
+		return string.char(0xE0 + (codepoint / 4096), 0x80 + ((codepoint / 64) % 64), 0x80 + (codepoint % 64))
 	end
 end
+
+-- local function schema(node)
+-- 	print("GetValue:" .. to_string(node))
+-- 	if node.tag == "!!int" then
+-- 		return tonumber(node.value)
+-- 	else
+-- 		return node.value
+-- 	end
+-- end
 
 local Parser = {}
 
@@ -49,6 +59,7 @@ function Parser:new(lexer)
 	o.anchors = {}
 	o.anchor = nil
 	o.alias = nil
+	o.global_uri = URI_CORE_SCHEMA
 	return o
 end
 
@@ -121,17 +132,102 @@ function Parser:collection()
 	end
 
 	print(">> collection: " .. self.indent)
-	table.insert(self.result, { state = "+SEQ" })
+	table.insert(self.result, { state = "+SEQ", tag = self:peek().tag })
 	__while(self, "DASH")
 	print("<< collection")
 	table.insert(self.result, { state = "-SEQ" })
 	return 1, nil
 end
 
+function Parser:cmap()
+	if self:peek() and self:peek().state == "CKEY" then
+		self.map_value_found = false
+		print(">> cmap: " .. self.indent)
+		table.insert(
+			self.result,
+			{ state = "+MAP", tag = self:peek().tag, anchor = self:peek().anchor, alias = self:peek().alias }
+		)
+		local key = self:next()
+		local first_line = true
+		while self:peek() do
+			print(
+				"ckey line: "
+					.. (first_line and "True" or "False")
+					.. " "
+					.. self:peek().indent
+					.. ":"
+					.. self:peek().state
+			)
+			if
+				not first_line
+				and self:peek().indent <= key.indent
+				and self:peek().state ~= "CVALUE"
+				and self:peek().state ~= "CKEY"
+				and self:peek().state ~= "NL"
+			then
+				print("cmap break")
+				break
+			elseif self:peek().state == "CKEY" then
+				if not self.map_value_found then
+					table.insert(self.result, { state = "VAL", value = "NaN" })
+				end
+				self.map_value_found = false
+				self:next()
+				first_line = true
+			elseif self:peek().state == "NL" then
+				self:next()
+				first_line = true
+			else
+				local res, msg
+				res, msg = __or(self, {
+					self.collection,
+					self.map,
+					self.cvalue,
+					self.start_flow_seq,
+					self.chars,
+					self.start_doc,
+					self.end_doc,
+				})
+				if res == 0 then
+					error(
+						string.format(
+							"[%d:%d]\n%s\n%s^ Unexpected Token found",
+							self:peek().row,
+							self:peek().col,
+							self.lexer:get_line(self:peek().row),
+							string.rep(" ", self:peek().col)
+						)
+					)
+				end
+				first_line = false
+			end
+		end
+		print("end cmap")
+		if not self.map_value_found then
+			table.insert(self.result, { state = "VAL", value = "NaN" })
+		end
+		table.insert(self.result, { state = "-MAP" })
+		return 1, nil
+	else
+		return 0, nil
+	end
+end
+
+function Parser:cvalue()
+	if self:peek() and self:peek().state == "CVALUE" then
+		self.map_value_found = true
+		print(">> cvalue: " .. self.indent)
+		self:next()
+		return 1, nil
+	else
+		return 0, nil
+	end
+end
+
 function Parser:map()
 	if self:peek() and self:peek().state == "KEY" then
 		print(">> map: " .. self.indent)
-		table.insert(self.result, { state = "+MAP" })
+		table.insert(self.result, { state = "+MAP", tag = self:peek().tag })
 		__while(self, "KEY")
 		table.insert(self.result, { state = "-MAP" })
 		print("<< map")
@@ -198,7 +294,7 @@ function Parser:chars()
 		)
 		self.anchor = nil
 		self.alias = nil
-		if self:peek().state == "NL" then
+		if self:peek() and self:peek().state == "NL" then
 			self:next()
 		end
 
@@ -211,9 +307,23 @@ function Parser:chars()
 			local start_indent = self:peek().indent
 			while self:peek() and self:peek().state == "CHAR" and self:peek().indent >= start_indent do
 				local sub = self:next()
-				self.result[#self.result].value = self.result[#self.result].value .. separator .. trim(sub.c, true)
+				print("start indent: " .. start_indent .. ", act_indent: " .. sub.indent)
+				if sub.indent > start_indent then
+					self.result[#self.result].value = self.result[#self.result].value
+						.. "\n"
+						.. string.rep(" ", sub.indent - start_indent)
+						.. trim(sub.c, true)
+				else
+					self.result[#self.result].value = self.result[#self.result].value .. separator .. trim(sub.c, true)
+				end
 				if self:peek() and self:peek().state == "NL" then
 					self:next()
+					if self:peek() and self:peek().state == "NL" then
+						print("empty line")
+						self.result[#self.result].value = self.result[#self.result].value .. "\n"
+						separator = "\n"
+						self:next()
+					end
 				end
 			end
 		end
@@ -270,8 +380,8 @@ end
 function Parser:start_flow_map()
 	if self:peek() and self:peek().state == "START_FLOW_MAP" then
 		print("start flow map")
-		self:next()
-		table.insert(self.result, { state = "+MAP", tag = "{}" })
+		local next = self:next()
+		table.insert(self.result, { state = "+MAP", tag = "{}", anchor = next.anchor, alias = next.alias })
 		local res, msg
 		res, msg = __or(self, {
 			-- self.collection,
@@ -320,6 +430,16 @@ function Parser:start_flow_seq()
 	end
 end
 
+function Parser:global_tag()
+	if self:peek() and self:peek().state == "GLOBAL_TAG" then
+		print("set global uri: " .. self:peek().c)
+		self.global_uri = self:next().c
+		return 1
+	else
+		return 0
+	end
+end
+
 function Parser:start_line()
 	while self:peek() do
 		print("start line: " .. self:peek().state)
@@ -328,8 +448,11 @@ function Parser:start_line()
 		else
 			local res, msg
 			res, msg = __or(self, {
+				self.global_tag,
 				self.collection,
 				self.map,
+				self.cmap,
+				self.cvalue,
 				self.start_flow_seq,
 				self.chars,
 				self.start_doc,
@@ -350,7 +473,37 @@ function Parser:start_line()
 	end
 end
 
+function Parser:value(str)
+	if string.match(str, "\\x%x%x") then
+		str = string.gsub(str, "\\x(%x%x)", function(hex)
+			return string.char(tonumber(hex, 16))
+		end)
+	end
+	if string.find(str, "\\u%x%x%x%x") then
+		str = string.gsub(str, "\\u(%x%x%x%x)", function(hex)
+			return utf8(tonumber(hex, 16))
+		end)
+	end
+	if string.find(str, "\\([b|t|r])") then
+		str = string.gsub(str, "\\([b|t|r])", function(hex)
+			if hex == "b" then
+				return utf8(tonumber("08", 16))
+			elseif hex == "t" then
+				return utf8(tonumber("09", 16))
+			elseif hex == "r" then
+				return utf8(tonumber("0D", 16))
+			else
+				error("unknown character: " .. hex)
+			end
+		end)
+	end
+	return str
+end
+
 function Parser:__tostring()
+	print("----------------------------------")
+	print(to_string(self.result))
+	print("----------------------------------")
 	local result = {}
 	table.insert(result, "+STR")
 	local indent = 1
@@ -374,14 +527,26 @@ function Parser:__tostring()
 			table.insert(result, string.format("%s%s", string.rep(" ", indent), "-DOC ..."))
 			doc_started = false
 		elseif string.sub(line.state, 1, 1) == "+" then
+			local line_tag = nil
+			if line.tag then
+				if string.match(line.tag, "!!(.*)") then
+					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!!(.*)") .. ">"
+				elseif string.match(line.tag, "!(.*)") then
+					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!(.*)") .. ">"
+				else
+					line_tag = line.tag
+				end
+			end
+			print("Anchor: " .. (line.anchor or "nil"))
 			table.insert(
 				result,
 				string.format(
-					"%s%s%s%s",
+					"%s%s%s%s%s",
 					string.rep(" ", indent),
 					line.state,
-					(line.tag and (" " .. line.tag) or ""),
-					(line.value and (" " .. line.value) or "")
+					(line_tag and (" " .. line_tag) or ""),
+					(line.value and (" " .. line.value) or ""),
+					(line.anchor and (" &" .. line.anchor) or "")
 				)
 			)
 			indent = indent + 1
@@ -396,6 +561,8 @@ function Parser:__tostring()
 			if line.value then
 				if line.tag == "|" or line.tag == ">" or line.tag == '"' or line.tag == "'" then
 					val = line.value
+				elseif line.value == "NaN" then
+					val = ""
 				elseif line.value then
 					val = trim(line.value)
 				end
@@ -404,7 +571,7 @@ function Parser:__tostring()
 			local line_tag = ":"
 			if line.tag then
 				if string.match(line.tag, "!!(.*)") then
-					line_tag = "<" .. URI_CORE_SCHEMA .. string.match(line.tag, "!!(.*)") .. "> :"
+					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!!(.*)") .. "> :"
 				elseif line.tag then
 					line_tag = line.tag
 				end
@@ -419,7 +586,7 @@ function Parser:__tostring()
 					(line.anchor and ("&" .. trim(line.anchor) .. " ") or ""),
 					(line.alias and ("*" .. trim(line.alias)) or ""),
 					(line.value and line_tag or ""),
-					(val and val or "")
+					(val and self:value(val) or "")
 				)
 			)
 		end
@@ -438,49 +605,6 @@ function Parser:decode()
 	return self:__tostring()
 end
 
-local doc = [[
-- list item 1
-- list item 2
-]]
-
-local doc = [[
-- list1
-- - list 2
-  - list 4
-]]
-
--- local doc = [[
--- - - list 2
---   - list 4
--- - list 5
--- - list 6
--- - - list 7
--- map: value 1
--- ]]
-
--- local doc = [[
--- abc: def
--- - list1
--- - - list 2
---   - list 4
--- ]]
---
-local doc = [[
-hr:
-  - Mark McGwire
-  # Following node labeled SS
-  - &SS Sammy Sosa
-rbi:
-  - *SS # Subsequent occurrence
-  - Ken Griffey  
- ]]
-
--- local lexer = Lexer:new(doc)
--- print(tostring(lexer))
--- local parser = Parser:new(lexer)
--- local res = parser:decode()
--- print(tostring(parser))
---
 return {
 	stream = function(doc)
 		print("Document:\n" .. doc .. "----------------\n")

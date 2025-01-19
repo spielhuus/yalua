@@ -12,16 +12,7 @@ this is a pure lua implentation of a YAML parser. the yaml.lua file is self cont
 
 ```lua
 
-function trim(s, preserve_linebreaks) 
- if preserve_linebreaks then 
-  return s:gsub("^[ \t\v\f]*(.-)[ \t\v\f]*$", "%1")
- else 
-  return (s:gsub("^%s*(.-)%s*$", "%1")) 
- end 
-end 
-
-a = "  aa bb cc \n  "
-print("'" .. trim(a) .. "'")
+print(string.format("aaa\b bbb\tccc"))
 ```
 
 ```lua
