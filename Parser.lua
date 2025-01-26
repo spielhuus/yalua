@@ -37,15 +37,6 @@ local function utf8(codepoint)
 	end
 end
 
--- local function schema(node)
--- 	print("GetValue:" .. to_string(node))
--- 	if node.tag == "!!int" then
--- 		return tonumber(node.value)
--- 	else
--- 		return node.value
--- 	end
--- end
-
 local Parser = {}
 
 function Parser:new(lexer)
@@ -75,11 +66,12 @@ local function __or(self, rules)
 end
 
 local function __while(self, name)
+	print("ENTER WHILE: " .. name)
 	-- while self:peek() and self:peek().state == name and self:peek().indent >= self.indent[#self.indent] do TODO: indent
-	while self:peek() and self:peek().state == name and self:peek().indent >= self.indent do
-		print(to_string(self:peek()))
+	while self:peek() and self:peek().indent >= self.indent and self:peek().state == name do
+		print("WHILE: " .. self:peek().state)
 		if name == "KEY" then
-			table.insert(self.result, { state = "VAL", value = self:peek().c })
+			table.insert(self.result, { state = "VAL", value = self:peek().c, tag = self:peek().tag })
 		end
 		-- table.insert(self.indent, self:next().indent) TODO: indent
 		self.indent = self:next().indent
@@ -87,21 +79,33 @@ local function __while(self, name)
 			self:next()
 		end
 
-		if self:peek() and self:peek().state == "ANCHOR" then
-			self:anchor()
-		end
-		print(">> while >> " .. self:peek().state .. " " .. self.indent)
+		-- if self:peek() and self:peek().state == "ANCHOR" then
+		-- 	self:anchor()
+		-- end
+		print(">> while >> " .. name .. " >> " .. self:peek().state .. " " .. self.indent)
 		res, ret = __or(self, {
 			self.chars,
 			self.collection,
 			self.map,
 			self.start_flow_seq,
 			self.start_flow_map,
-			-- self.start_flow_value,
+			self.tag,
+			self.parse_anchor,
 			self.nl,
-			self.alias,
+			self.__alias,
 		})
-		print("<< while << i: " .. self.index .. ", res:" .. res .. " " .. (self:peek() and self:peek().state or "nil"))
+		print(
+			"<< while << "
+				.. name
+				.. ", i: "
+				.. self.index
+				.. ", res:"
+				.. res
+				.. " "
+				.. (self:peek() and self:peek().state or "nil")
+				.. " "
+				.. (self:peek() and self:peek().c or "nil")
+		)
 		-- table.remove(self.indent, #self.indent) TODO: indent
 		if res ~= 1 then
 			break
@@ -178,6 +182,7 @@ function Parser:cmap()
 				self:next()
 				first_line = true
 			else
+				print("get value : " .. self:peek().state)
 				local res, msg
 				res, msg = __or(self, {
 					self.collection,
@@ -199,7 +204,7 @@ function Parser:cmap()
 						)
 					)
 				end
-				first_line = false
+				-- first_line = false
 			end
 		end
 		print("end cmap")
@@ -239,26 +244,19 @@ end
 
 function Parser:nl()
 	if self:peek() and self:peek().state == "NL" then
+		self:next()
 		return 1, nil
 	else
 		return 0, nil
 	end
 end
 
-function Parser:anchor()
-	if self:peek() and self:peek().state == "ANCHOR" then
-		-- self.anchors[trim(self:next().c)] = self:peek().c
-		print("ANCHOR")
-		self.anchor = self:next().c
-		return 1, nil
-	else
-		return 0, nil
-	end
-end
-
-function Parser:alias()
+function Parser:__alias()
 	if self:peek() and self:peek().state == "ALIAS" then
+		print("search alias")
+		print("get alias")
 		self.alias = self:next().c
+		table.insert(self.result, { state = "VAL", value = nil, alias = self.alias }) -- TODO rename to ali
 		return 1, nil
 	else
 		return 0, nil
@@ -288,10 +286,14 @@ function Parser:chars()
 	if self:peek() and self:peek().state == "CHAR" then
 		print(">> CHARS " .. (self:peek() and self:peek().state or "none") .. " " .. (self:peek().c or "nil"))
 		local next = self:next()
-		table.insert(
-			self.result,
-			{ state = "VAL", value = next.c, anchor = next.anchor, alias = next.alias, tag = next.tag }
-		)
+		table.insert(self.result, {
+			state = "VAL",
+			value = next.c,
+			anchor = next.anchor,
+			alias = next.alias,
+			tag = (next.tag and string.sub(next.tag, 1, 1) or nil),
+			indent = next.indent,
+		})
 		self.anchor = nil
 		self.alias = nil
 		if self:peek() and self:peek().state == "NL" then
@@ -358,10 +360,14 @@ function Parser:start_flow_map_value()
 		print("flow map value")
 		while self:peek() and self:peek().state == "KEY" do
 			local key = self:next()
-			table.insert(
-				self.result,
-				{ state = "VAL", value = key.c, anchor = key.anchor, alias = key.alias, tag = key.tag }
-			)
+			table.insert(self.result, {
+				state = "VAL",
+				value = key.c,
+				anchor = key.anchor,
+				alias = key.alias,
+				tag = key.tag,
+				indent = key.indent,
+			})
 			assert(self:peek().state == "VAL")
 			local val = self:next()
 			table.insert(
@@ -381,7 +387,10 @@ function Parser:start_flow_map()
 	if self:peek() and self:peek().state == "START_FLOW_MAP" then
 		print("start flow map")
 		local next = self:next()
-		table.insert(self.result, { state = "+MAP", tag = "{}", anchor = next.anchor, alias = next.alias })
+		table.insert(
+			self.result,
+			{ state = "+MAP", tag = "{}", anchor = next.anchor, alias = next.alias, indent = next.indent }
+		)
 		local res, msg
 		res, msg = __or(self, {
 			-- self.collection,
@@ -411,6 +420,7 @@ end
 
 function Parser:start_flow_seq()
 	if self:peek() and self:peek().state == "START_FLOW_SEQ" then
+		print("start flow seq")
 		self:next()
 		table.insert(self.result, { state = "+SEQ", tag = "[]" })
 		local res = 1
@@ -430,6 +440,79 @@ function Parser:start_flow_seq()
 	end
 end
 
+function Parser:parse_anchor()
+	if self:peek() and self:peek().state == "ANCHOR" then
+		local anchor_node = self:next()
+		print("ANCHOR " .. anchor_node.c .. ":" .. anchor_node.indent)
+		local anchor_index = #self.result
+		self:nl()
+		res, msg = __or(self, {
+			self.chars,
+			self.start_flow_seq,
+			self.start_flow_map,
+		})
+		if res == 1 then
+			print("search node after anchor: " .. self.result[anchor_index].state)
+			if self.result[anchor_index].indent == anchor_node.indent then
+				self.result[anchor_index + 1].anchor = anchor_node.c
+			end
+		else
+			self.result[anchor_index].anchor = anchor_node.c
+			-- error("node after anchor not found: " .. anchor_node.row .. ":" .. anchor_node.col)
+		end
+	end
+	return 0
+end
+
+function Parser:tag()
+	if self:peek() and self:peek().state == "TAG" then
+		print("found tag: " .. self:peek().c)
+		local tag_value = self:next().c
+		if string.match(tag_value, "!!(.*)") then
+			table.insert(
+				self.result,
+				{ state = "TAG", value = "<" .. self.global_uri .. string.match(tag_value, "!!(.*)") .. ">" }
+			)
+		elseif string.match(tag_value, "!(.*)") then
+			table.insert(
+				self.result,
+				{ state = "TAG", value = "<" .. self.global_uri .. string.match(tag_value, "!(.*)") .. ">" }
+			)
+		else
+			table.insert(self.result, { state = "TAG", value = tag_value })
+		end
+
+		res, msg = __or(self, {
+			self.global_tag,
+			self.tag,
+			self.collection,
+			self.map,
+			self.cmap,
+			self.cvalue,
+			self.start_flow_seq,
+			self.chars,
+			self.start_doc,
+			self.end_doc,
+			self.__alias,
+			self.nl,
+		})
+		if res == 0 then
+			error(
+				string.format(
+					"[%d:%d]\n%s\n%s^ Unexpected Token found",
+					self:peek().row,
+					self:peek().col,
+					self.lexer:get_line(self:peek().row),
+					string.rep(" ", self:peek().col)
+				)
+			)
+		end
+		return 1
+	else
+		return 0
+	end
+end
+
 function Parser:global_tag()
 	if self:peek() and self:peek().state == "GLOBAL_TAG" then
 		print("set global uri: " .. self:peek().c)
@@ -444,11 +527,13 @@ function Parser:start_line()
 	while self:peek() do
 		print("start line: " .. self:peek().state)
 		if self:peek().state == "NL" then
+			print("start line NL")
 			self:next()
 		else
 			local res, msg
 			res, msg = __or(self, {
 				self.global_tag,
+				self.tag,
 				self.collection,
 				self.map,
 				self.cmap,
@@ -457,6 +542,7 @@ function Parser:start_line()
 				self.chars,
 				self.start_doc,
 				self.end_doc,
+				self.__alias,
 			})
 			if res == 0 then
 				error(
@@ -501,13 +587,11 @@ function Parser:value(str)
 end
 
 function Parser:__tostring()
-	print("----------------------------------")
-	print(to_string(self.result))
-	print("----------------------------------")
 	local result = {}
 	table.insert(result, "+STR")
 	local indent = 1
 	local doc_started = false
+	local tag = nil
 	if self.result[1].state ~= "+DOC" then
 		table.insert(result, " +DOC")
 		doc_started = true
@@ -529,9 +613,7 @@ function Parser:__tostring()
 		elseif string.sub(line.state, 1, 1) == "+" then
 			local line_tag = nil
 			if line.tag then
-				if string.match(line.tag, "!!(.*)") then
-					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!!(.*)") .. ">"
-				elseif string.match(line.tag, "!(.*)") then
+				if string.match(line.tag, "!(.*)") then
 					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!(.*)") .. ">"
 				else
 					line_tag = line.tag
@@ -541,14 +623,16 @@ function Parser:__tostring()
 			table.insert(
 				result,
 				string.format(
-					"%s%s%s%s%s",
+					"%s%s%s%s%s%s",
 					string.rep(" ", indent),
 					line.state,
 					(line_tag and (" " .. line_tag) or ""),
+					(tag and (" " .. tag) or ""),
 					(line.value and (" " .. line.value) or ""),
 					(line.anchor and (" &" .. line.anchor) or "")
 				)
 			)
+			tag = nil
 			indent = indent + 1
 		elseif string.sub(line.state, 1, 1) == "-" then
 			indent = indent - 1
@@ -556,6 +640,8 @@ function Parser:__tostring()
 				result,
 				string.format("%s%s%s", string.rep(" ", indent), line.state, (line.value and (" " .. line.value) or ""))
 			)
+		elseif line.state == "TAG" then
+			tag = line.value
 		else
 			local val = nil -- TODO: move this to schema
 			if line.value then
@@ -575,6 +661,8 @@ function Parser:__tostring()
 				elseif line.tag then
 					line_tag = line.tag
 				end
+			elseif tag then
+				line_tag = tag .. " :"
 			end
 
 			table.insert(
@@ -589,6 +677,7 @@ function Parser:__tostring()
 					(val and self:value(val) or "")
 				)
 			)
+			tag = nil
 		end
 	end
 	if doc_started then
@@ -604,6 +693,18 @@ function Parser:decode()
 	self:start_line()
 	return self:__tostring()
 end
+
+local input = [[
+---
+- Mark McGwire: 65
+- Sammy Sosa: 63
+- Ken Griffy: 58
+]]
+-- local lexer = Lexer:new(input)
+-- print(tostring(lexer))
+-- local parser = Parser:new(lexer)
+-- local res = parser:decode() -- TODO: remove
+-- print(tostring(parser))
 
 return {
 	stream = function(doc)

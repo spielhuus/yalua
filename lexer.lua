@@ -1,5 +1,3 @@
-local trim = require("str").trim
-
 local Lexer = {}
 
 local Token = {}
@@ -8,18 +6,16 @@ local Token = {}
 
 ---@class Token
 function Token:new(state, row, col, indent, c, anchor, alias, tag)
-	local o = {}
-	self.__index = self
-	setmetatable(o, self)
-	o.state = state
-	o.row = row
-	o.col = col
-	o.indent = indent
-	o.c = c
-	o.anchor = anchor
-	o.alias = alias
-	o.tag = tag
-	return o
+	return setmetatable({
+		state = state,
+		row = row,
+		col = col,
+		indent = indent,
+		c = c,
+		anchor = anchor,
+		alias = alias,
+		tag = tag,
+	}, { __index = Token })
 end
 
 function Lexer:new(doc)
@@ -43,10 +39,13 @@ function Lexer:new(doc)
 	return o
 end
 
+-- ---------------------------------------------------------------------------------
+-- ---                          utility functions                                ---
+-- ---------------------------------------------------------------------------------
+
 local function __or(self, rules)
-	local state, fn
 	for _, rule in ipairs(rules) do
-		state, fn = rule(self)
+		local state, fn = rule(self)
 		if state > 0 then
 			return state, fn
 		end
@@ -62,16 +61,10 @@ function Lexer:__peek_char(n)
 	return string.sub(self.str, self.index + n, self.index + n)
 end
 
-function Lexer:__skip_space()
-	if self:__peek_char() == " " then
-		self:__next_char()
-	end
-	return 0
-end
-
 function Lexer:__nl()
 	if self:__peek_char() == "\n" then
 		self:__next_char()
+		-- self:__push("NL", "")
 		return 1
 	end
 	return 0
@@ -106,17 +99,8 @@ function Lexer:__push(state, c)
 end
 
 function Lexer:__match(...)
-	local args = { ... }
-	if self.index + #args > #self.str then
-		return false
-	end
-	for i, arg in ipairs(args) do
-		if string.sub(self.str, self.index + i, self.index + i) ~= arg then
-			return false
-		end
-	end
-
-	return true
+	local s = string.sub(self.str, self.index + 1, self.index + select("#", ...))
+	return s == table.concat({ ... })
 end
 
 function Lexer:__eof()
@@ -124,30 +108,12 @@ function Lexer:__eof()
 end
 
 function Lexer:__eol()
-	if self:__peek_char() == "\n" then
-		return true
-	elseif self:__peek_char() == "\r" then
-		return true
-	else
-		return false
-	end
+	return self:__peek_char() == "\n" or self:__peek_char() == "\r"
 end
 
 -- ---------------------------------------------------------------------------------
 -- ---                       the parser functions                                ---
 -- ---------------------------------------------------------------------------------
-
-function Lexer:skip_ws()
-	if self:__match(" ") or self:__match("\n") then
-		print("skip ws '" .. self:__peek_char() .. "'")
-		while not self:__eol() and (self:__peek_char() == " " or self:__peek_char() == "\n") do
-			self:__next_char()
-		end
-		return 1
-	else
-		return 0
-	end
-end
 
 function Lexer:add_char()
 	if self:__eol() or self:__eof() then
@@ -162,13 +128,6 @@ function Lexer:add_char()
 	end
 end
 
-function Lexer:char()
-	while not self:__eol() do
-		table.insert(self.chars, self:__next_char())
-	end
-	return 1
-end
-
 function Lexer:__anchor()
 	if self:__match("&") then
 		print("anchor:" .. self:__peek_char())
@@ -179,11 +138,13 @@ function Lexer:__anchor()
 		end
 		self:__next_char()
 		self.anchor = table.concat(anchor, "")
+		self:__push("ANCHOR", table.concat(anchor, ""))
 		local res = __or(self, {
 			self.line_comment,
 			self.flow,
 			self.scalar,
 		})
+		print("end flow in anchor: " .. self:__peek_char())
 		return 1
 	else
 		return 0
@@ -198,7 +159,8 @@ function Lexer:__alias()
 			table.insert(alias, self:__next_char())
 		end
 		self.alias = table.concat(alias, "")
-		self:__push("CHAR", nil)
+		self:__push("ALIAS", table.concat(alias, ""))
+		-- self:__push("CHAR", nil)
 		local res = __or(self, {
 			self.line_comment,
 		})
@@ -228,7 +190,7 @@ function Lexer:quote()
 				self.chars = {}
 			elseif self:__peek_char() == "\\" then
 				local bslash = self:__next_char()
-				if self:__peek_char() == "n" then
+				if self:__peek_char() == "n" then -- TODO
 					print("found nl")
 					self:__next_char()
 					table.insert(self.chars, "\n")
@@ -251,16 +213,29 @@ function Lexer:quote()
 end
 
 function Lexer:__tag()
-	if self:__match("!", "!") then -- TODO match also other tags
+	print("MATCH TAG")
+	if self:__match("!", "<") then
+		self:__next_char()
+		local tag = {}
+		table.insert(tag, self:__next_char())
+		while not self:__eof() and self:__peek_char() ~= ">" do
+			table.insert(tag, self:__next_char())
+		end
+		table.insert(tag, self:__next_char())
+		self:__push("TAG", table.concat(tag))
+		-- self.tag = table.concat(tag)
+		self:ws(true)
+		return 1
+	elseif self:__match("!", "!") then -- TODO match also other tags
 		local _tag = {}
 		while self:__peek_char() ~= " " and self:__peek_char() ~= "\n" do
 			table.insert(_tag, self:__next_char())
 		end
-		self.tag = table.concat(_tag, "")
+		-- self.tag = table.concat(_tag, "")
+		self:__push("TAG", table.concat(_tag, ""))
 		local res = __or(self, {
 			self.scalar,
 		})
-
 		return 1
 	elseif self:__match("!") then
 		local _tag = {}
@@ -268,6 +243,7 @@ function Lexer:__tag()
 			table.insert(_tag, self:__next_char())
 		end
 		self.tag = table.concat(_tag, "")
+		self:__push("TAG", table.concat(_tag, ""))
 		return 1
 	else
 		return 0
@@ -279,9 +255,10 @@ function Lexer:folded()
 		print("folded")
 		self:__next_char()
 		self.tag = ">"
-		self:__skip_space()
-		return self:__nl()
+		self:ws(false)
+		return 1
 	elseif self:__match(" ", ">") then -- TODO: space handling
+		error("old folded style")
 		print("old folded")
 		self:__next_char()
 		self:__next_char()
@@ -293,7 +270,13 @@ function Lexer:folded()
 end
 
 function Lexer:literal()
-	if self:__match("|") then
+	if self:__match("|", "-") then
+		print("literal")
+		self:__next_char()
+		self:__next_char()
+		self.tag = "|-"
+		return 1
+	elseif self:__match("|") then
 		print("literal")
 		self:__next_char()
 		self.tag = "|"
@@ -303,16 +286,6 @@ function Lexer:literal()
 		self:__next_char()
 		self:__next_char()
 		self.tag = "|"
-		return 1
-	else
-		return 0
-	end
-end
-
-function Lexer:__indent()
-	if self:__match(" ") then
-		self:__next_char()
-		self.indent = self.indent + 1
 		return 1
 	else
 		return 0
@@ -372,25 +345,21 @@ end
 
 function Lexer:flow()
 	if self:__match("{") or self:__match("[") then
-		print("start_flow")
+		print("start flow")
 		self.flow_level = 0
 		local res = self:__while(function()
-			print("loop flow: " .. self:__peek_char())
 			local inner_res = __or(self, {
-				-- self.flow_sep,
 				self.flow_seq_start,
 				self.flow_map_start,
 				self.add_char,
-				self.__nl,
 			})
-			print("FLOW:" .. inner_res .. ":" .. self.flow_level)
+			print("end flow: " .. inner_res .. " " .. self.flow_level)
 			if inner_res == 1 and self.flow_level == 0 then
 				return 1
 			else
 				return 0
 			end
 		end)
-		print("flow res: " .. res)
 		return res
 	else
 		return 0
@@ -420,14 +389,16 @@ function Lexer:flow_map_start()
 		self:ws(true)
 		local res = 0
 		self:__while(function()
-			print("next" .. self:__peek_char())
+			print("next: '" .. self:__peek_char() .. "'")
 			res = __or(self, {
 				self.flow_map_start,
 				self.flow_map_end,
 				self.flow_seq_start,
 				self.flow_map_value,
 				self.add_char,
+				self.__nl,
 			})
+			print("flow map start res: " .. res .. "-> '" .. (self:__peek_char() or "nil") .. "'")
 			return res
 		end)
 		print("MAP RES: " .. self.flow_level .. " " .. table.concat(self.chars, ""))
@@ -448,19 +419,26 @@ function Lexer:flow_map_value()
 		self.chars = {}
 		self:__next_char()
 		local res = self:__while(function()
+			print("start_flow_map_value_loop ->'" .. self:__peek_char() .. "'")
 			local res = __or(self, {
-				self.add_char,
 				self.flow_sep,
 				self.flow_seq_start,
 				self.flow_map_start,
 				self.flow_map_end,
-				self.__nl,
+				self.add_char,
 			})
+			print("inside flow map value: " .. res .. "->" .. (self:__peek_char() or "nil"))
+			if self:__peek_char() == "\n" then
+				self:__next_char()
+			end
 			return res
 		end)
 		if res == 1 and self.flow_level == 0 then
+			print("flow map value close: " .. res .. "->'" .. (self:__peek_char() or "nil") .. "'")
 			return 1
 		else
+			-- self:ws(true)
+			print("flow map value: " .. res .. "/>" .. self:__peek_char())
 			return 0
 		end
 	else
@@ -469,6 +447,7 @@ function Lexer:flow_map_value()
 end
 
 function Lexer:flow_map_end()
+	print("FLOW MAP end : " .. self:__peek_char() .. ":" .. (self:__match("}") and "true" or "false"))
 	if self:__match("}") then
 		self.flow_level = self.flow_level - 1
 		print(" map end")
@@ -479,12 +458,7 @@ function Lexer:flow_map_end()
 		self.tag = "{}"
 		self:__push("END_FLOW_MAP")
 		self:__next_char()
-		self:__while(function()
-			__or(self, {
-				self.skip_ws,
-				self.__nl,
-			})
-		end)
+		self:ws(true)
 		return 1
 	else
 		return 0
@@ -500,6 +474,7 @@ function Lexer:flow_seq_value()
 			self.flow_seq_end,
 			self.flow_sep,
 			self.add_char,
+			self.__nl,
 		})
 		return res
 	end)
@@ -526,7 +501,7 @@ function Lexer:flow_seq_start()
 			})
 
 			if res == 1 and self.flow_level == 0 then
-				return 1
+				return 2
 			else
 				return 0
 			end
@@ -549,12 +524,7 @@ function Lexer:flow_seq_end()
 		self.tag = "[]"
 		self:__push("END_FLOW_SEQ")
 		self:__next_char()
-		self:__while(function()
-			__or(self, {
-				self.skip_ws,
-				self.__nl,
-			})
-		end)
+		self:ws(true)
 		return 1
 	else
 		return 0
@@ -583,19 +553,21 @@ function Lexer:mapping_value()
 		self:__push("KEY", table.concat(self.chars, ""))
 		self.chars = {}
 
-		res = __or(self, {
-			self.__anchor,
-			self.__alias,
-		})
+		-- res = __or(self, {
+		-- 	self.__anchor,
+		-- 	self.__alias,
+		-- })
 		print("found anchor: " .. res)
 		self:__while(function()
 			res = __or(self, {
+				self.__anchor,
+				self.__alias,
 				self.literal,
 				self.folded,
 				self.line_comment,
 				self.flow,
 				self.add_char,
-				self.__nl, -- TODO: this should be unreachable
+				self.__nl,
 			})
 			return res
 		end)
@@ -621,6 +593,11 @@ function Lexer:scalar()
 		self:__push("CHAR", table.concat(self.chars, ""))
 		self:__push("NL")
 		self.chars = {}
+		-- add the empty lines
+		while self:__peek_char() == "\n" do
+			self:__next_char()
+			self:__push("NL")
+		end
 	end
 	return 1
 end
@@ -688,46 +665,11 @@ function Lexer:end_doc()
 		self:__next_char()
 		self:__next_char()
 		self:__push("END_DOC")
-		__or(self, {
-			self.skip_ws,
-			self.__nl,
-		})
+		self:ws(false)
 		return 1
 	else
 		return 0
 	end
-end
-
-function Lexer:line()
-	print("line chars: " .. #self.chars)
-	local res = 0
-	self:__while(function()
-		self.indent = 0
-		while self:__indent() == 1 do
-		end
-		print(
-			"start line row:" .. self.row .. ", indent:" .. self.indent .. ", first char:'" .. self:__peek_char() .. "'"
-		)
-		self:ws(false)
-		res = __or(self, {
-			self.start_doc,
-			self.end_doc,
-			self.sequence,
-			self.line_comment,
-			self.directive,
-			self.literal,
-			self.folded,
-			self.flow,
-			self.__tag,
-			self.__anchor,
-			self.__alias,
-			self.mapping_key,
-			self.cmapping_value,
-			self.scalar,
-		})
-		return res
-	end)
-	return res
 end
 
 function Lexer:parse()
@@ -746,15 +688,52 @@ function Lexer:parse()
 			print("found other tag definition: '" .. tag .. "'")
 		end
 	end
-	self:__while(function()
-		local res = self:line()
-		print("<" .. res .. ":" .. self.row .. ":" .. self.col)
-		if self:__peek_char() == "\n" then
-			self:__next_char()
-			self:__push("NL")
+	local res = 0
+	while not self:__eof() do
+		print(
+			"start line row:"
+				.. self.row
+				.. ", col:"
+				.. self.col
+				.. ", indent:"
+				.. self.indent
+				.. ", first char:'"
+				.. (self:__peek_char() or "nil")
+				.. "'"
+		)
+		self:ws(false)
+		res = __or(self, {
+			self.start_doc,
+			self.end_doc,
+			self.sequence,
+			self.line_comment,
+			self.directive,
+			self.literal,
+			self.folded,
+			self.flow,
+			self.__tag,
+			self.__anchor,
+			self.__alias,
+			self.mapping_key,
+			self.cmapping_value,
+			self.scalar,
+			self.__nl,
+		})
+		if self.col == 0 then
+			self.indent = 0
+			while not self:__eof() and self:__peek_char() == " " do
+				self.indent = self.indent + 1
+				self:__next_char()
+			end
 		end
-		return 0
-	end)
+		print(
+			"LINE loop res : "
+				.. res
+				.. "->"
+				.. (self:__peek_char() == "\n" and "\\n" or (self:__peek_char() and self:__peek_char() or "nil"))
+		)
+	end
+	return res
 end
 
 --- Get the line from the docment
@@ -792,37 +771,5 @@ function Lexer:__tostring()
 	end
 	return table.concat(str, "\n")
 end
-
-local input = [[
----
-Time: 2001-11-23 15:01:42 -5
-User: ed
-Warning:
-  This is an error message
-  for the log file
----
-Time: 2001-11-23 15:02:31 -5
-User: ed
-Warning:
-  A slightly different error
-  message.
----
-Date: 2001-11-23 15:03:17 -5
-User: ed
-Fatal:
-  Unknown variable "bar"
-Stack:
-- file: TopClass.py
-  line: 23
-  code: |
-    x = MoreObject("345\n")
-- file: MoreClass.py
-  line: 58
-  code: |-
-    foo = bar
-]]
-
-local l = Lexer:new(input)
-print(tostring(l))
 
 return Lexer
