@@ -1,23 +1,26 @@
 local Lexer = {}
 
-local Token = {}
-
 -- local print = function(...) end
 
 ---@class Token
-function Token:new(state, row, col, indent, c, anchor, alias, tag)
-	return setmetatable({
-		state = state,
-		row = row,
-		col = col,
-		indent = indent,
-		c = c,
-		anchor = anchor,
-		alias = alias,
-		tag = tag,
-	}, { __index = Token })
-end
+---@field state string
+---@field row integer
+---@field col integer
+---@field indent integer
+---@field c string
+---@field alias string
+---@field tag string
 
+---The YAML lexer
+---@param doc string The YAML document
+---@tokens table<Token> the result
+---@index integer the index in the document
+---@row integer the actual row
+---@col integer the actual col
+---@indent integer the actual indentation
+---@chars table<string> the collected characters
+---@tag string type hint for the token
+---@return table
 function Lexer:new(doc)
 	local o = {}
 	self.__index = self
@@ -27,11 +30,8 @@ function Lexer:new(doc)
 	o.index = 0
 	o.row = 1
 	o.col = 0
-	o.line_start = true
 	o.indent = 0
 	o.chars = {}
-	o.anchor = nil
-	o.alias = nil
 	o.tag = nil
 	o.flow_level = 0
 	o.state = nil
@@ -89,10 +89,15 @@ function Lexer:__next_char()
 end
 
 function Lexer:__push(state, c)
-	local token = Token:new(state, self.row, self.col, self.indent, c, self.anchor, self.alias, self.tag)
+	local token = {
+		state = state,
+		row = self.row,
+		col = self.col,
+		indent = self.indent,
+		c = c,
+		tag = self.tag,
+	}
 	if state ~= "NL" then
-		self.anchor = nil
-		self.alias = nil
 		self.tag = nil
 	end
 	table.insert(self.tokens, token)
@@ -137,14 +142,12 @@ function Lexer:__anchor()
 			table.insert(anchor, self:__next_char())
 		end
 		self:__next_char()
-		self.anchor = table.concat(anchor, "")
 		self:__push("ANCHOR", table.concat(anchor, ""))
 		local res = __or(self, {
 			self.line_comment,
 			self.flow,
 			self.scalar,
 		})
-		print("end flow in anchor: " .. self:__peek_char())
 		return 1
 	else
 		return 0
@@ -158,7 +161,6 @@ function Lexer:__alias()
 		while not self:__eol() and not self:__eof() and self:__peek_char() ~= " " do
 			table.insert(alias, self:__next_char())
 		end
-		self.alias = table.concat(alias, "")
 		self:__push("ALIAS", table.concat(alias, ""))
 		-- self:__push("CHAR", nil)
 		local res = __or(self, {
@@ -231,7 +233,6 @@ function Lexer:__tag()
 		while self:__peek_char() ~= " " and self:__peek_char() ~= "\n" do
 			table.insert(_tag, self:__next_char())
 		end
-		-- self.tag = table.concat(_tag, "")
 		self:__push("TAG", table.concat(_tag, ""))
 		local res = __or(self, {
 			self.scalar,
@@ -242,7 +243,6 @@ function Lexer:__tag()
 		while self:__peek_char() ~= " " and self:__peek_char() ~= "\n" do
 			table.insert(_tag, self:__next_char())
 		end
-		self.tag = table.concat(_tag, "")
 		self:__push("TAG", table.concat(_tag, ""))
 		return 1
 	else
@@ -256,13 +256,6 @@ function Lexer:folded()
 		self:__next_char()
 		self.tag = ">"
 		self:ws(false)
-		return 1
-	elseif self:__match(" ", ">") then -- TODO: space handling
-		error("old folded style")
-		print("old folded")
-		self:__next_char()
-		self:__next_char()
-		self.tag = ">"
 		return 1
 	else
 		return 0
@@ -278,12 +271,6 @@ function Lexer:literal()
 		return 1
 	elseif self:__match("|") then
 		print("literal")
-		self:__next_char()
-		self.tag = "|"
-		return 1
-	elseif self:__match(" ", "|") then -- TODO: space handling
-		print("literal")
-		self:__next_char()
 		self:__next_char()
 		self.tag = "|"
 		return 1
@@ -552,12 +539,6 @@ function Lexer:mapping_value()
 		local res = 0
 		self:__push("KEY", table.concat(self.chars, ""))
 		self.chars = {}
-
-		-- res = __or(self, {
-		-- 	self.__anchor,
-		-- 	self.__alias,
-		-- })
-		print("found anchor: " .. res)
 		self:__while(function()
 			res = __or(self, {
 				self.__anchor,
@@ -566,6 +547,7 @@ function Lexer:mapping_value()
 				self.folded,
 				self.line_comment,
 				self.flow,
+				self.__tag,
 				self.add_char,
 				self.__nl,
 			})
