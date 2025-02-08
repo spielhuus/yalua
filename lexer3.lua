@@ -99,6 +99,7 @@ function Lexer:comment()
 end
 
 function Lexer:collect()
+	print("Collect: " .. self:peek())
 	table.insert(self.chars, self:next_char())
 end
 
@@ -181,12 +182,13 @@ function Lexer:alias()
 end
 
 function Lexer:scalar()
+	local old_index = self.index
 	while true do
 		local indent = 0
 		while self:peek(indent + 1) == " " do
 			indent = indent + 1
 		end
-		-- TODO: check what this is
+		-- add empty line break to tokens
 		if self:eol() then
 			table.insert(self.tokens, {
 				kind = "NL",
@@ -201,6 +203,7 @@ function Lexer:scalar()
 			while self:peek() ~= "\n" do
 				table.insert(chars, self:next_char())
 			end
+			old_index = self.index
 			self:next_char()
 			table.insert(self.tokens, {
 				kind = "CHARS",
@@ -216,6 +219,7 @@ function Lexer:scalar()
 			self.act_alias = nil
 			self.act_tag = nil
 		else
+			self.index = old_index
 			break
 		end
 	end
@@ -342,7 +346,7 @@ local states = {
 		{ "&", "", Lexer.anchor },
 		{ "*", "", Lexer.alias },
 		{ ">", "FOLDED", Lexer.folded, "BLOCK" },
-		{ "|", "LITERAL", Lexer.folded, "BLOCK" },
+		{ "|", "LITERAL", Lexer.folded, "BLOCK_IN" },
 		{ "_", "CHARS", Lexer.collect },
 	},
 }
@@ -560,7 +564,6 @@ function Parser:map(indent)
 	while self:peek() and self:match("CHARS", "COLON") and self:peek().indent == act_indent do
 		table.insert(self.result, { kind = "VAL", value = self:next() })
 		self:skip("COLON")
-		print("MAP_VAL:" .. to_string(self:peek()))
 		if self:match("CHARS", "COLON") then
 			self:map(act_indent)
 		elseif self:peek().kind == "CHARS" then
@@ -664,7 +667,7 @@ function Parser:literal()
 	if string.sub(res, #res, #res) == " " then
 		res = string.sub(res, 1, #res - 1)
 	end
-	literal_node.value = res .. (blank_line and "" or "\n")
+	literal_node.value = res .. (blank_line or literal_node.chopped and "" or "\n")
 	table.insert(self.result, { kind = "VAL", value = literal_node })
 end
 
