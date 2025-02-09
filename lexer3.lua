@@ -99,7 +99,6 @@ function Lexer:comment()
 end
 
 function Lexer:collect()
-	print("Collect: " .. self:peek())
 	table.insert(self.chars, self:next_char())
 end
 
@@ -146,7 +145,9 @@ function Lexer:anchor()
 	while self:peek() ~= " " and self:peek() ~= "\n" do
 		table.insert(name, self:next_char())
 	end
-	self:next_char()
+	if self:peek() == " " then
+		self:next_char()
+	end
 	self.act_anchor = {
 		kind = "ANCHOR",
 		indent = self.indent,
@@ -292,7 +293,9 @@ function Lexer:quoted()
 			.. (self:peek() == "\\n" and "\n" or ""),
 		type = quote,
 	})
-	-- TODO clear anchor, tag and shit
+	self.tags = nil
+	self.anchor = nil
+	self.alias = nil
 end
 
 local states = {
@@ -362,7 +365,6 @@ function Lexer:process_rules()
 			fn(self)
 			return
 		elseif self:match_str(key) then
-			print("MATCH: " .. self.state .. "->" .. name .. " " .. table.concat(self.chars, ""))
 			if name == "SEQ_START" or name == "MAP_START" then
 				self.flow_level = self.flow_level + 1
 			elseif name == "SEQ_END" or name == "MAP_END" then
@@ -528,9 +530,32 @@ function Parser:value(str)
 	return str
 end
 
+function Parser:push(kind, node)
+	local the_node = node
+	if node.anchor then
+		print(kind .. " has anchor: " .. to_string(node) .. " NEXT: " .. to_string(self:peek()))
+		if node.anchor.indent ~= node.indent then
+			print("indent does differ")
+			the_node = {
+				indent = node.indent,
+				kind = kind,
+				anchor = {
+					value = node.anchor.value,
+				},
+				value = node.value,
+				row = node.row,
+				col = node.col,
+			}
+			node.anchor = nil
+			print("the node: " .. to_string(the_node))
+		end
+	end
+	table.insert(self.result, { kind = kind, value = the_node })
+end
+
 function Parser:collection(indent)
 	local node = self:peek()
-	table.insert(self.result, { kind = "+SEQ", value = node })
+	self:push("+SEQ", node)
 	local act_indent = self:peek().indent
 	while self:peek() and self:match("DASH") and self:peek().indent == act_indent do
 		self:skip("DASH")
@@ -559,7 +584,7 @@ end
 
 function Parser:map(indent)
 	local node = self:peek()
-	table.insert(self.result, { kind = "+MAP", value = node })
+	self:push("+MAP", node)
 	local act_indent = self:peek().indent
 	while self:peek() and self:match("CHARS", "COLON") and self:peek().indent == act_indent do
 		table.insert(self.result, { kind = "VAL", value = self:next() })
@@ -700,29 +725,13 @@ end
 function Parser:parse_tag(tag_value)
 	local tag_result
 	print("PARSE TAG: " .. tag_value)
-	if string.match(tag_value, "^!!(.*)") then
+	if string.match(tag_value, "^!<(.*)>$") then
+		tag_result = "<" .. string.match(tag_value, "^!<(.*)>$") .. ">"
+	elseif string.match(tag_value, "^!!(.*)") then
 		tag_result = "<" .. self.global_tag .. ":" .. string.match(tag_value, "^!!(.*)") .. ">"
 	elseif string.match(tag_value, "^!(.*)") then
 		tag_result = "<" .. self.global_tag .. ":" .. string.match(tag_value, "^!(.*)") .. ">"
 	end
-	-- if string.match(tag_value, "!!(.+)") then
-	-- 	-- print("found global tag: " .. to_string(self:peek()))
-	-- 	tag_result = "<" .. self.global_uri .. string.match(tag_value, "!!(.*)") .. ">"
-	-- elseif string.match(tag_value, "!(.*)!(.+)") then
-	-- 	local key, val = string.match(tag_value, "!(.+)!(.+)")
-	-- 	print("found named tag: " .. key .. " " .. val .. " -> " .. to_string(self.tags))
-	-- 	tag_result = "<" .. self.tags[key] .. val .. ">"
-	-- elseif string.match(tag_value, "!(.+)") then
-	-- 	if self.primary_uri then
-	-- 		tag_result = "<" .. self.primary_uri .. string.match(tag_value, "!(.*)") .. ">"
-	-- 	else
-	-- 		tag_result = "<!" .. string.match(tag_value, "!(.*)") .. ">"
-	-- 	end
-	-- elseif tag_value == "!" then
-	-- 	tag_result = "<" .. tag_value .. ">"
-	-- else
-	-- 	tag_result = tag_value
-	-- end
 	print("TAG RESULT: " .. tag_result)
 	return tag_result
 end
@@ -778,6 +787,7 @@ function Parser:__tostring()
 	local doc_started = false
 	local anchor = nil
 	for i, item in ipairs(self.result) do
+		print("to_string: " .. to_string(item))
 		if i == 1 and item.kind ~= "START_DOC" then
 			table.insert(str, " +DOC")
 			doc_started = true
@@ -792,7 +802,6 @@ function Parser:__tostring()
 			doc_started = false
 			table.insert(str, " -DOC ...")
 		elseif string.sub(item.kind, 1, 1) == "+" then
-			print(to_string(item))
 			table.insert(
 				str,
 				string.format(
@@ -813,7 +822,6 @@ function Parser:__tostring()
 		elseif item.kind == "ALIAS" then
 			table.insert(str, string.format("%sALI *%s", string.rep(" ", indent), item.value.value))
 		else
-			print(to_string(item))
 			if item.value.alias then
 				table.insert(str, string.format("%s=ALI *%s", string.rep(" ", indent), trim(item.value.alias.value)))
 				anchor = nil

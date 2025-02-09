@@ -53,6 +53,19 @@ def escape(input_string):
     )
 
 
+def escape_content(input_string):
+    """
+    Escapes quotes and newlines in a given string.
+
+    Args:
+        input_string (str): The input string to be processed.
+
+    Returns:
+        str: The input string with quotes and newlines escaped.
+    """
+    return input_string.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+
+
 # def escape(input_string):
 #     """
 #     Escapes quotes in a given string, and escapes backslashes only when they are not part of control characters like \\n or \\t.
@@ -121,11 +134,13 @@ def string_to_hashtags(input_string):
 
 # Clone the YAML test suite repository to a temporary directory
 url = "https://github.com/yaml/yaml-test-suite.git"
-temp_dir = clone_repo(url)
+# temp_dir = clone_repo(url)
+#
+# if not temp_dir:
+#     print("❌ Cloning of the repository failed.")
+#     exit()
 
-if not temp_dir:
-    print("❌ Cloning of the repository failed.")
-    exit()
+temp_dir = "/tmp/tmpe958acb0/"
 
 # Don't forget to clean up the temporary directory when you're done
 if not pathlib.Path(temp_dir).is_dir():
@@ -133,72 +148,122 @@ if not pathlib.Path(temp_dir).is_dir():
 else:
     with open("spec/testsuite/tree_spec.lua", "w") as f:
         f.write('local assert = require("luassert")\n')
-        f.write('local yalua = require("yamlparser")\n')
+        f.write('local yalua = require("Parser")\n')
         f.write(f'describe("Run the YAML test #suite, compare with TREE", function()\n')
         # try:
         for file in glob.glob(f"{temp_dir}/src/*.yaml"):
+            print(
+                "--------------------------------------------------------------------------"
+            )
             with open(file, "r") as yaml_file:
+                name = ""
+                source = ""
+                tags = ""
+                the_yaml = ""
+                fail = False
                 path = pathlib.Path(file)
                 yaml_data = yaml.safe_load(yaml_file)
 
-                if not "fail" in yaml_data[0]:  # and "yaml" in yaml_data[0]:
-                    tags = ""
-                    if yaml_data[0]["tags"]:
-                        tags = string_to_hashtags(yaml_data[0]["tags"])
-                    f.write(
-                        f'  it("should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem} tags: {tags}", function()\n'
-                    )
-                    f.write(
-                        f'  print("### should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}")\n'
-                    )
-                    f.write(
-                        f'    local input = "{escape(fix_chars(yaml_data[0]["yaml"]))}"\n'
-                    )
-                    f.write(
-                        f'    local tree = "{yaml_data[0]["tree"].replace('"', '\\"').replace("'", "\\'").replace("\n", "\\n")}"\n'
-                    )
-                    f.write("local result = yalua.stream(input)\n")
-                    f.write("assert.is.Same(tree, result)\n")
-                    f.write(f"  end)\n")
+                for item in yaml_data:
+                    for key, value in item.items():
+                        if key == "name":
+                            name = value
+                        elif key == "from":
+                            source = value
+                        elif key == "tags":
+                            tags = value
+                        elif key == "fail":
+                            fail = value
+                        elif key == "yaml":
+                            the_yaml = value
+                        elif key == "tree" and fail == False:
+                            f.write(
+                                f'  it("should parse the {escape(name)}, file: #{path.stem} tags: {tags}", function()\n'
+                            )
+                            f.write(
+                                f'    print("### should parse the {escape(name)}, file: #{path.stem}")\n'
+                            )
+                            f.write(
+                                f'    local input = "{escape(fix_chars(the_yaml))}"\n'
+                            )
+                            if fail:
+                                f.write("    local result = yalua.stream(input)\n")
+                                f.write("    assert.Equal(nil, result)\n")
+                                f.write(f"  end)\n")
+                            else:
+                                f.write(
+                                    f'    local tree = "{value.replace('"', '\\"').replace("'", "\\'").replace("\n", "\\n")}"\n'
+                                )
+                                f.write("    local result = yalua.stream(input)\n")
+                                f.write("    assert.is.Same(tree, result)\n")
+                                f.write(f"  end)\n")
+
+                        else:
+                            print(f"{key}")
+
         f.write(f"end)\n\n")
 
-    with open("spec/testsuite/json_spec.lua", "w") as f:
-        f.write('local assert = require("luassert")\n')
-        f.write('local yalua = require("yalua")\n')
-        f.write('local rapidjson = require("rapidjson")\n')
-        f.write(f'describe("Run the YAML test #suite, compare with JSON", function()\n')
-        for file in glob.glob(f"{temp_dir}/src/*.yaml"):
-            with open(file, "r") as yaml_file:
-                path = pathlib.Path(file)
-                yaml_data = yaml.safe_load(yaml_file)
+        # for key, val in item:
+        #     print(f"item: {key}")
 
-                if not "fail" in yaml_data[0] and "json" in yaml_data[0]:
-                    tags = ""
-                    if yaml_data[0]["tags"]:
-                        tags = string_to_hashtags(yaml_data[0]["tags"])
-                    f.write(
-                        f'  it("should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}, tags: {tags}", function()\n'
-                    )
-                    f.write(
-                        f'  print("### should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}")\n'
-                    )
-                    f.write(
-                        f'    local input = "{escape(fix_chars(yaml_data[0]["yaml"]))}"\n'
-                    )
-                    f.write(f'    local tree = "{escape(yaml_data[0]["json"])}"\n')
-                    f.write("local result = yalua.decode(input)\n")
-                    f.write("assert.is.Same(rapidjson.decode(tree), result)\n")
-                    f.write(f"  end)\n")
-        f.write(f"end)\n\n")
+        # if not "fail" in yaml_data[0]:  # and "yaml" in yaml_data[0]:
+        #     tags = ""
+        #     if yaml_data[0]["tags"]:
+        #         tags = string_to_hashtags(yaml_data[0]["tags"])
+        #     f.write(
+        #         f'  it("should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem} tags: {tags}", function()\n'
+        #     )
+        #     f.write(
+        #         f'  print("### should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}")\n'
+        #     )
+        #     f.write(
+        #         f'    local input = "{escape(fix_chars(yaml_data[0]["yaml"]))}"\n'
+        #     )
+        #     f.write(
+        #         f'    local tree = "{yaml_data[0]["tree"].replace('"', '\\"').replace("'", "\\'").replace("\n", "\\n")}"\n'
+        #     )
+        #     f.write("local result = yalua.stream(input)\n")
+        #     f.write("assert.is.Same(tree, result)\n")
+        #     f.write(f"  end)\n")
+        # f.write(f"end)\n\n")
+
+    # with open("spec/testsuite/json_spec.lua", "w") as f:
+    #     f.write('local assert = require("luassert")\n')
+    #     f.write('local yalua = require("yalua")\n')
+    #     f.write('local rapidjson = require("rapidjson")\n')
+    #     f.write(f'describe("Run the YAML test #suite, compare with JSON", function()\n')
+    #     for file in glob.glob(f"{temp_dir}/src/*.yaml"):
+    #         with open(file, "r") as yaml_file:
+    #             path = pathlib.Path(file)
+    #             yaml_data = yaml.safe_load(yaml_file)
+    #
+    #             if not "fail" in yaml_data[0] and "json" in yaml_data[0]:
+    #                 tags = ""
+    #                 if yaml_data[0]["tags"]:
+    #                     tags = string_to_hashtags(yaml_data[0]["tags"])
+    #                 f.write(
+    #                     f'  it("should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}, tags: {tags}", function()\n'
+    #                 )
+    #                 f.write(
+    #                     f'  print("### should parse the {escape(yaml_data[0]["name"])}, file: #{path.stem}")\n'
+    #                 )
+    #                 f.write(
+    #                     f'    local input = "{escape(fix_chars(yaml_data[0]["yaml"]))}"\n'
+    #                 )
+    #                 f.write(f'    local tree = "{escape(yaml_data[0]["json"])}"\n')
+    #                 f.write("local result = yalua.decode(input)\n")
+    #                 f.write("assert.is.Same(rapidjson.decode(tree), result)\n")
+    #                 f.write(f"  end)\n")
+    #     f.write(f"end)\n\n")
 
 
-try:
-    shutil.rmtree(temp_dir)
-except FileNotFoundError:
-    print(f"❌ Directory '{temp_dir}' not found.")
-    exit(1)
-except Exception as e:
-    print(f"❌ Error deleting directory: {e}")
-    exit(1)
+# try:
+#     shutil.rmtree(temp_dir)
+# except FileNotFoundError:
+#     print(f"❌ Directory '{temp_dir}' not found.")
+#     exit(1)
+# except Exception as e:
+#     print(f"❌ Error deleting directory: {e}")
+#     exit(1)
 
 print("✅ Test suite generated")

@@ -51,27 +51,73 @@ function Parser:new(lexer)
 	o.anchor = nil
 	o.alias = nil
 	o.global_uri = URI_CORE_SCHEMA
+	o.primary_uri = nil
+	o.tags = {}
 	return o
+end
+
+function Parser:create_error(row, col, message)
+	return string.format("[%d:%d]\n%s\n%s^ %s", row, col, self.lexer:get_line(row), string.rep(" ", col), message)
 end
 
 local function __or(self, rules)
 	local state, fn
 	for _, rule in ipairs(rules) do
 		state, fn = rule(self)
-		if state > 0 then
+		if state < 0 then
+			return state, fn
+		elseif state > 0 then
 			return state, fn
 		end
 	end
 	return 0, nil
 end
 
-local function __while(self, name)
+function Parser:parse_tag()
+	local tag_value = self.act_tag.c
+	local tag_result
+	if string.match(tag_value, "!!(.+)") then
+		-- print("found global tag: " .. to_string(self:peek()))
+		tag_result = "<" .. self.global_uri .. string.match(tag_value, "!!(.*)") .. ">"
+	elseif string.match(tag_value, "!(.*)!(.+)") then
+		local key, val = string.match(tag_value, "!(.+)!(.+)")
+		print("found named tag: " .. key .. " " .. val .. " -> " .. to_string(self.tags))
+		tag_result = "<" .. self.tags[key] .. val .. ">"
+	elseif string.match(tag_value, "!(.+)") then
+		if self.primary_uri then
+			tag_result = "<" .. self.primary_uri .. string.match(tag_value, "!(.*)") .. ">"
+		else
+			tag_result = "<!" .. string.match(tag_value, "!(.*)") .. ">"
+		end
+	elseif tag_value == "!" then
+		tag_result = "<" .. tag_value .. ">"
+	else
+		tag_result = tag_value
+	end
+	print("TAG RESULT: " .. tag_result)
+	return tag_result
+end
+
+function Parser:__while(name)
 	print("ENTER WHILE: " .. name)
 	-- while self:peek() and self:peek().state == name and self:peek().indent >= self.indent[#self.indent] do TODO: indent
 	while self:peek() and self:peek().indent >= self.indent and self:peek().state == name do
 		print("WHILE: " .. self:peek().state)
 		if name == "KEY" then
-			table.insert(self.result, { state = "VAL", value = self:peek().c, tag = self:peek().tag })
+			local tag_result -- TODO move more to parse_tag
+			if self.act_tag then
+				tag_result = self:parse_tag()
+				print("tag indent: " .. self.act_tag.indent .. "<" .. self:peek().indent)
+				if self.act_tag.indent < self:peek().indent then
+					self.result[#self.result].tag_uri = tag_result
+					tag_result = nil
+				end
+				self.act_tag = nil
+			end
+			table.insert(
+				self.result,
+				{ state = "VAL", value = self:peek().c, indent = self:peek().indent, tag_uri = tag_result }
+			)
 		end
 		-- table.insert(self.indent, self:next().indent) TODO: indent
 		self.indent = self:next().indent
@@ -84,12 +130,12 @@ local function __while(self, name)
 		-- end
 		print(">> while >> " .. name .. " >> " .. self:peek().state .. " " .. self.indent)
 		res, ret = __or(self, {
+			self.tag,
 			self.chars,
 			self.collection,
 			self.map,
 			self.start_flow_seq,
 			self.start_flow_map,
-			self.tag,
 			self.parse_anchor,
 			self.nl,
 			self.__alias,
@@ -106,11 +152,10 @@ local function __while(self, name)
 				.. " "
 				.. (self:peek() and self:peek().c or "nil")
 		)
-		-- table.remove(self.indent, #self.indent) TODO: indent
 		if res ~= 1 then
 			break
 		end
-
+		self:tag() -- look for tags
 		while self:peek() and self:peek().state == "NL" do
 			self:next()
 		end
@@ -130,27 +175,40 @@ function Parser:peek()
 end
 
 function Parser:collection()
-	local res, ret
-	if self:peek() and self:peek().state ~= "DASH" then
-		return 0, nil
+	if self:peek() and self:peek().state == "DASH" then
+		print(">> collection: " .. self.indent)
+		local tag_result -- TODO move more to parse_tag
+		if self.act_tag then
+			tag_result = self:parse_tag()
+			self.act_tag = nil
+		end
+		table.insert(self.result, { state = "+SEQ", tag = self:peek().tag, tag_uri = tag_result })
+		self:__while("DASH")
+		print("<< collection")
+		table.insert(self.result, { state = "-SEQ" })
+		return 1
+	else
+		return 0
 	end
-
-	print(">> collection: " .. self.indent)
-	table.insert(self.result, { state = "+SEQ", tag = self:peek().tag })
-	__while(self, "DASH")
-	print("<< collection")
-	table.insert(self.result, { state = "-SEQ" })
-	return 1, nil
 end
 
 function Parser:cmap()
 	if self:peek() and self:peek().state == "CKEY" then
 		self.map_value_found = false
 		print(">> cmap: " .. self.indent)
-		table.insert(
-			self.result,
-			{ state = "+MAP", tag = self:peek().tag, anchor = self:peek().anchor, alias = self:peek().alias }
-		)
+		local tag_key, tag_uri
+		local tag_result -- TODO move more to parse_tag
+		if self.act_tag then
+			tag_result = self:parse_tag()
+			self.act_tag = nil
+		end
+		table.insert(self.result, {
+			state = "+MAP",
+			tag = self:peek().tag,
+			anchor = self:peek().anchor,
+			alias = self:peek().alias,
+			tag_uri = tag_result,
+		})
 		local key = self:next()
 		local first_line = true
 		while self:peek() do
@@ -232,8 +290,8 @@ end
 function Parser:map()
 	if self:peek() and self:peek().state == "KEY" then
 		print(">> map: " .. self.indent)
-		table.insert(self.result, { state = "+MAP", tag = self:peek().tag })
-		__while(self, "KEY")
+		table.insert(self.result, { state = "+MAP", tag = self:peek().tag, indent = self:peek().indent })
+		self:__while("KEY")
 		table.insert(self.result, { state = "-MAP" })
 		print("<< map")
 		return 1, nil
@@ -286,12 +344,24 @@ function Parser:chars()
 	if self:peek() and self:peek().state == "CHAR" then
 		print(">> CHARS " .. (self:peek() and self:peek().state or "none") .. " " .. (self:peek().c or "nil"))
 		local next = self:next()
+		local tag_key, tag_uri
+		local tag_result -- TODO move more to parse_tag
+		if self.act_tag then
+			tag_result = self:parse_tag()
+			print("tag indent: " .. self.act_tag.indent .. "<" .. next.indent)
+			if self.act_tag.indent < next.indent then
+				error("tag indent does not match")
+			end
+			self.act_tag = nil
+		end
 		table.insert(self.result, {
 			state = "VAL",
 			value = next.c,
 			anchor = next.anchor,
 			alias = next.alias,
 			tag = (next.tag and string.sub(next.tag, 1, 1) or nil),
+			type = (next.tag and string.sub(next.tag, 1, 1) or nil),
+			tag_uri = tag_result,
 			indent = next.indent,
 		})
 		self.anchor = nil
@@ -306,6 +376,7 @@ function Parser:chars()
 		end
 		-- search for indent strings
 		if self:peek() and self:peek().state == "CHAR" then
+			local has_nl = false
 			local start_indent = self:peek().indent
 			while self:peek() and self:peek().state == "CHAR" and self:peek().indent >= start_indent do
 				local sub = self:next()
@@ -315,8 +386,20 @@ function Parser:chars()
 						.. "\n"
 						.. string.rep(" ", sub.indent - start_indent)
 						.. trim(sub.c, true)
+				elseif sub.c == "" then
+					print("empty line")
+					self.result[#self.result].value = self.result[#self.result].value .. "\\n" -- TODO
+					has_nl = true
 				else
-					self.result[#self.result].value = self.result[#self.result].value .. separator .. trim(sub.c, true)
+					print("other line")
+					if has_nl then
+						self.result[#self.result].value = self.result[#self.result].value .. trim(sub.c, true)
+						has_nl = false
+					else
+						self.result[#self.result].value = self.result[#self.result].value
+							.. separator
+							.. trim(sub.c, true)
+					end
 				end
 				if self:peek() and self:peek().state == "NL" then
 					self:next()
@@ -328,9 +411,13 @@ function Parser:chars()
 					end
 				end
 			end
+			-- self.result[#self.result].value = self.result[#self.result].value .. separator
 		end
+		print("tag is:" .. (next.tag or "nil"))
 		if next.tag == "|" or next.tag == ">" then
-			self.result[#self.result].value = self.result[#self.result].value .. "\n"
+			self.result[#self.result].value = self.result[#self.result].value .. "\\n" -- TODO
+			-- else
+			-- 	self.result[#self.result].value = self.result[#self.result].value .. separator
 		end
 		return 1, nil
 	else
@@ -467,47 +554,77 @@ end
 function Parser:tag()
 	if self:peek() and self:peek().state == "TAG" then
 		print("found tag: " .. self:peek().c)
-		local tag_value = self:next().c
-		if string.match(tag_value, "!!(.*)") then
-			table.insert(
-				self.result,
-				{ state = "TAG", value = "<" .. self.global_uri .. string.match(tag_value, "!!(.*)") .. ">" }
-			)
-		elseif string.match(tag_value, "!(.*)") then
-			table.insert(
-				self.result,
-				{ state = "TAG", value = "<" .. self.global_uri .. string.match(tag_value, "!(.*)") .. ">" }
-			)
-		else
-			table.insert(self.result, { state = "TAG", value = tag_value })
-		end
+		self.act_tag = self:next()
+		-- local tag_value = self:next().c
+		-- local tag_result
+		-- if string.match(tag_value, "!!(.+)") then
+		-- 	-- print("found global tag: " .. to_string(self:peek()))
+		-- 	tag_result = "<" .. self.global_uri .. string.match(tag_value, "!!(.*)") .. ">"
+		-- elseif string.match(tag_value, "!(.*)!(.+)") then
+		-- 	local key, val = string.match(tag_value, "!(.+)!(.+)")
+		-- 	-- print("found named tag: " .. key .. " " .. val)
+		-- 	tag_result = "<!" .. self.tags[key] .. val .. ">"
+		-- elseif string.match(tag_value, "!(.+)") then
+		-- 	if self.primary_uri then
+		-- 		tag_result = "<" .. self.primary_uri .. string.match(tag_value, "!(.*)") .. ">"
+		-- 	else
+		-- 		tag_result = "<!" .. string.match(tag_value, "!(.*)") .. ">"
+		-- 	end
+		-- elseif tag_value == "!" then
+		-- 	tag_result = "<" .. tag_value .. ">"
+		-- else
+		-- 	tag_result = tag_value
+		-- end
+		-- local tag_index = #self.result
+		-- res, msg = __or(self, {
+		-- 	self.global_tag,
+		-- 	self.tag,
+		-- 	self.collection,
+		-- 	self.map,
+		-- 	self.cmap,
+		-- 	self.cvalue,
+		-- 	self.start_flow_seq,
+		-- 	self.chars,
+		-- 	self.start_doc,
+		-- 	self.end_doc,
+		-- 	self.__alias,
+		-- 	self.nl,
+		-- })
+		-- if res == 0 then
+		-- 	error(
+		-- 		string.format(
+		-- 			"[%d:%d]\n%s\n%s^ Unexpected Token found",
+		-- 			self:peek().row,
+		-- 			self:peek().col,
+		-- 			self.lexer:get_line(self:peek().row),
+		-- 			string.rep(" ", self:peek().col)
+		-- 		)
+		-- 	)
+		-- end
+		-- if self.result[tag_index + 1].state == "+MAP" then
+		-- 	self.result[tag_index + 2].tag = tag_result -- handle indentation
+		-- else
+		-- 	self.result[tag_index + 1].tag = tag_result -- handle indentation
+		-- end
+		-- print("<tag")
+		return 0
+	else
+		return 0
+	end
+end
 
-		res, msg = __or(self, {
-			self.global_tag,
-			self.tag,
-			self.collection,
-			self.map,
-			self.cmap,
-			self.cvalue,
-			self.start_flow_seq,
-			self.chars,
-			self.start_doc,
-			self.end_doc,
-			self.__alias,
-			self.nl,
-		})
-		if res == 0 then
-			error(
-				string.format(
-					"[%d:%d]\n%s\n%s^ Unexpected Token found",
-					self:peek().row,
-					self:peek().col,
-					self.lexer:get_line(self:peek().row),
-					string.rep(" ", self:peek().col)
-				)
-			)
+function Parser:yaml()
+	if self:peek() and self:peek().state == "YAML" then
+		local yaml_node = self:next()
+		print("set yaml version: " .. to_string(yaml_node))
+		local version = string.match(yaml_node.c, "^%%YAML (%d+%.%d+)$")
+		if version then
+			-- TODO: what to do with yaml version
+			print("yaml version is: " .. version)
+			return 1
+		else
+			return -1, self:create_error(yaml_node.row, yaml_node.col, "Can not parse YAML version")
 		end
-		return 1
 	else
 		return 0
 	end
@@ -515,8 +632,13 @@ end
 
 function Parser:global_tag()
 	if self:peek() and self:peek().state == "GLOBAL_TAG" then
-		print("set global uri: " .. self:peek().c)
-		self.global_uri = self:next().c
+		print("set global uri: " .. self:peek().c .. " " .. (self:peek().tag or "nil"))
+		if self:peek().tag then
+			local the_tag = self:next()
+			self.tags[the_tag.tag] = the_tag.c
+		else
+			self.primary_uri = self:next().c
+		end
 		return 1
 	else
 		return 0
@@ -532,6 +654,7 @@ function Parser:start_line()
 		else
 			local res, msg
 			res, msg = __or(self, {
+				self.yaml,
 				self.global_tag,
 				self.tag,
 				self.collection,
@@ -539,12 +662,15 @@ function Parser:start_line()
 				self.cmap,
 				self.cvalue,
 				self.start_flow_seq,
+				self.start_flow_map,
 				self.chars,
 				self.start_doc,
 				self.end_doc,
 				self.__alias,
 			})
-			if res == 0 then
+			if res < 0 then
+				return nil, msg
+			elseif res == 0 then
 				error(
 					string.format(
 						"[%d:%d]\n%s\n%s^ Unexpected Token found",
@@ -587,6 +713,8 @@ function Parser:value(str)
 end
 
 function Parser:__tostring()
+	print(to_string(self.result))
+	print("------------------------------------")
 	local result = {}
 	table.insert(result, "+STR")
 	local indent = 1
@@ -613,21 +741,36 @@ function Parser:__tostring()
 		elseif string.sub(line.state, 1, 1) == "+" then
 			local line_tag = nil
 			if line.tag then
-				if string.match(line.tag, "!(.*)") then
-					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!(.*)") .. ">"
-				else
-					line_tag = line.tag
+				-- if string.match(line.tag, "!(.*)") then
+				-- 	line_tag = "<" .. self.global_uri .. string.match(line.tag, "!(.*)") .. ">"
+				-- else
+				line_tag = line.tag
+				-- end
+			end
+
+			local the_tag = ""
+			if line.tag_uri then
+				if string.match(line.tag_uri, "!!(.*)") then
+					the_tag = "<" .. self.global_uri .. string.match(line.tag_uri, "!!(.*)") .. ">"
+				elseif string.match(line.tag_uri, "<.*>") then
+					the_tag = line.tag_uri -- .. " "
+				elseif string.match(line.tag_uri, "!(.+)") then
+					if self.primary_uri then
+						the_tag = "<" .. self.primary_uri .. string.match(line.tag_uri, "!(.*)") .. ">"
+					else
+						the_tag = "<!" .. string.match(line.tag_uri, "!(.*)") .. ">"
+					end
 				end
 			end
-			print("Anchor: " .. (line.anchor or "nil"))
+
 			table.insert(
 				result,
 				string.format(
 					"%s%s%s%s%s%s",
 					string.rep(" ", indent),
 					line.state,
+					(line.tag_uri and (" " .. line.tag_uri) or ""),
 					(line_tag and (" " .. line_tag) or ""),
-					(tag and (" " .. tag) or ""),
 					(line.value and (" " .. line.value) or ""),
 					(line.anchor and (" &" .. line.anchor) or "")
 				)
@@ -654,26 +797,36 @@ function Parser:__tostring()
 				end
 			end
 
-			local line_tag = ":"
-			if line.tag then
-				if string.match(line.tag, "!!(.*)") then
-					line_tag = "<" .. self.global_uri .. string.match(line.tag, "!!(.*)") .. "> :"
-				elseif line.tag then
-					line_tag = line.tag
+			local line_tag = ""
+			if line.tag_uri then
+				if string.match(line.tag_uri, "!!(.*)") then
+					line_tag = "<" .. self.global_uri .. string.match(line.tag_uri, "!!(.*)") .. "> "
+				elseif string.match(line.tag_uri, "<.*>") then
+					line_tag = line.tag_uri .. " "
+				elseif string.match(line.tag_uri, "!(.+)") then
+					if self.primary_uri then
+						line_tag = "<" .. self.primary_uri .. string.match(line.tag_uri, "!(.*)") .. ">"
+					else
+						line_tag = "<!" .. string.match(line.tag_uri, "!(.*)") .. ">"
+					end
 				end
-			elseif tag then
-				line_tag = tag .. " :"
+			end
+
+			local line_type = ":"
+			if line.type then
+				line_type = line.type
 			end
 
 			table.insert(
 				result,
 				string.format(
-					"%s=%s %s%s%s%s",
+					"%s=%s %s%s%s%s%s",
 					string.rep(" ", indent),
 					(line.alias and "ALI" or line.state),
 					(line.anchor and ("&" .. trim(line.anchor) .. " ") or ""),
 					(line.alias and ("*" .. trim(line.alias)) or ""),
 					(line.value and line_tag or ""),
+					(line.value and line_type or ""),
 					(val and self:value(val) or "")
 				)
 			)
@@ -690,21 +843,28 @@ function Parser:__tostring()
 end
 
 function Parser:decode()
-	self:start_line()
-	return self:__tostring()
+	local res, msg = self:start_line()
+	if not res then
+		return res, msg
+	else
+		return self:__tostring()
+	end
 end
 
-local input = [[
----
-- Mark McGwire: 65
-- Sammy Sosa: 63
-- Ken Griffy: 58
-]]
+-- local input = [[
+-- %YAML 1.2 foo
+-- nname: foo
+-- ]]
+-- print(input)
 -- local lexer = Lexer:new(input)
 -- print(tostring(lexer))
 -- local parser = Parser:new(lexer)
--- local res = parser:decode() -- TODO: remove
--- print(tostring(parser))
+-- local res, msg = parser:decode() -- TODO: remove
+-- if not res then
+-- 	print(msg)
+-- else
+-- 	print(tostring(parser))
+-- end
 
 return {
 	stream = function(doc)

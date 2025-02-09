@@ -1,6 +1,6 @@
 local Lexer = {}
 
--- local print = function(...) end
+local print = function(...) end
 
 ---@class Token
 ---@field state string
@@ -162,7 +162,6 @@ function Lexer:__alias()
 			table.insert(alias, self:__next_char())
 		end
 		self:__push("ALIAS", table.concat(alias, ""))
-		-- self:__push("CHAR", nil)
 		local res = __or(self, {
 			self.line_comment,
 		})
@@ -263,16 +262,13 @@ function Lexer:folded()
 end
 
 function Lexer:literal()
-	if self:__match("|", "-") then
-		print("literal")
-		self:__next_char()
-		self:__next_char()
-		self.tag = "|-"
-		return 1
-	elseif self:__match("|") then
+	if self:__match("|") then
 		print("literal")
 		self:__next_char()
 		self.tag = "|"
+		while self:__peek_char() and self:__peek_char() ~= "\n" do
+			self.tag = self.tag .. self:__next_char()
+		end
 		return 1
 	else
 		return 0
@@ -570,7 +566,7 @@ function Lexer:scalar()
 		})
 		return _res
 	end)
-	if #self.chars > 0 then
+	if #require("str").trim(table.concat(self.chars, "")) > 0 then
 		print("SCALAR:" .. self.indent .. "'" .. table.concat(self.chars, "") .. "'")
 		self:__push("CHAR", table.concat(self.chars, ""))
 		self:__push("NL")
@@ -654,22 +650,76 @@ function Lexer:end_doc()
 	end
 end
 
-function Lexer:parse()
-	if self:__peek_char() == "%" then
-		local tag_chars = {}
-		while not self:__eol() do
-			table.insert(tag_chars, self:__next_char())
+-- %TAG !e! tag:example.com,2000:app/
+function Lexer:tag_definitions()
+	if self:__match("%", "T", "A", "G", " ") then
+		print("TAG")
+		local line = {}
+		while self:__peek_char() and self:__peek_char() ~= "\n" do
+			table.insert(line, self:__next_char())
 		end
-		local tag = table.concat(tag_chars, "")
-		print("'" .. (string.match(tag, "^%%TAG ! (.-)$") or "nil") .. "'")
-		if string.match(tag, "^%%TAG ! (.-)$") then
-			local tag_uri = string.match(tag, "^%%TAG ! (.-)$")
-			self:__push("GLOBAL_TAG", tag_uri)
-			print("found global tag definition: " .. tag_uri)
+		if string.match(table.concat(line, ""), "^%%TAG !(.+)! (.+)$") then
+			local tag_key, tag_uri = string.match(table.concat(line, ""), "^%%TAG !(.+)! (.+)$")
+			print("found local: key:" .. tag_key .. ", uri: " .. tag_uri)
+			table.insert(self.tokens, {
+				state = "GLOBAL_TAG",
+				row = self.row,
+				col = self.col,
+				indent = self.indent,
+				c = tag_uri,
+				tag = tag_key,
+			})
+		elseif string.match(table.concat(line, ""), "^%%TAG ! (.+)$") then
+			local tag_uri = string.match(table.concat(line, ""), "^%%TAG ! (.+)$")
+			table.insert(self.tokens, {
+				state = "GLOBAL_TAG",
+				row = self.row,
+				col = self.col,
+				indent = self.indent,
+				c = tag_uri,
+			})
 		else
-			print("found other tag definition: '" .. tag .. "'")
+			print("!!: '" .. table.concat(line, "") .. "'")
 		end
+		return 1
+	elseif self:__match("%", "Y", "A", "M", "L", " ") then
+		local row, col = self.row, self.col
+		print("match yaml")
+		local version = {}
+		while not self:__eol() do
+			table.insert(version, self:__next_char())
+		end
+		table.insert(self.tokens, {
+			state = "YAML",
+			row = row,
+			col = col,
+			indent = self.indent,
+			c = table.concat(version, ""),
+		})
+		return 1
+	else
+		return 0
 	end
+end
+
+function Lexer:parse()
+	while self:tag_definitions() == 1 do
+	end
+	-- if self:__peek_char() == "%" then
+	-- 	local tag_chars = {}
+	-- 	while not self:__eol() do
+	-- 		table.insert(tag_chars, self:__next_char())
+	-- 	end
+	-- 	local tag = table.concat(tag_chars, "")
+	-- 	print("'" .. (string.match(tag, "^%%TAG ! (.-)$") or "nil") .. "'")
+	-- 	if string.match(tag, "^%%TAG ! (.-)$") then
+	-- 		local tag_uri = string.match(tag, "^%%TAG ! (.-)$")
+	-- 		self:__push("GLOBAL_TAG", tag_uri)
+	-- 		print("found global tag definition: " .. tag_uri)
+	-- 	else
+	-- 		print("found other tag definition: '" .. tag .. "'")
+	-- 	end
+	-- end
 	local res = 0
 	while not self:__eof() do
 		print(
@@ -687,6 +737,7 @@ function Lexer:parse()
 		res = __or(self, {
 			self.start_doc,
 			self.end_doc,
+			self.tag_definitions,
 			self.sequence,
 			self.line_comment,
 			self.directive,
