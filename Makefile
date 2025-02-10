@@ -9,7 +9,9 @@ LLS_URL="https://github.com/LuaLS/lua-language-server/releases/download/3.13.4/l
 LLS_GZ=lua-language-server-3.13.4-linux-x64.tar.gz
 LLS=.venv/bin/lua-language-server
 
-TESTS_CHAPTER_TWO = "FQ7F,SYW4,PBJ2,229Q,YD5X,ZF4X,JHB9,U9NS,J9HZ,7BUB,M5DY,9U5K,6JQW,96L6,6VJK,HMK4,G4RS,4CQQ,C4HZ,2XXW,J7PZ,UGM3,RZT7,"
+# TESTS_CHAPTER_TWO = "FQ7F,SYW4,PBJ2,229Q,YD5X,ZF4X,JHB9,U9NS,J9HZ,7BUB,M5DY,9U5K,6JQW,96L6,6VJK,HMK4,G4RS,4CQQ,C4HZ,2XXW,J7PZ,UGM3,RZT7,"
+TESTS_CHAPTER_TWO = "JHB9,J7PZ,ZF4X,96L6,2XXW,SYW4,6VJK,U9NS,9U5K,HMK4,M5DY,6JQW,PBJ2,229Q,RZT7,G4RS,C4HZ,J9HZ,7BUB,UGM3,YD5X,FQ7F,4CQQ"
+TESTS_CHAPTER_FIVE = "5BVJ,J3BT,UDR7,98YD,27NA,CUP7,S9E8,9SHH"
 
 .PHONY: test clean help
 
@@ -29,7 +31,7 @@ luacheck: ## Run luackeck
 test: $(LUA_FILES) $(SPEC_FILES) ## Run the tests
 	#$(LUAROCKS) --lua-version 5.1 --tree $(LUA_TREE) test -- --exclude-tags "suite,json"
 	# last test is 2.11
-	busted spec/testsuite/tree_spec.lua --tags $(TESTS_CHAPTER_TWO)
+	busted spec/testsuite/tree_spec.lua --tags $(TESTS_CHAPTER_TWO),$(TESTS_CHAPTER_FIVE)
 
 suite:
 	busted spec/testsuite/tree_spec.lua --exclude-tags "CT4Q,LX3P"

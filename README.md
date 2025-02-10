@@ -57,6 +57,20 @@ print(parsed)
 
 ```
 
+```py
+import yaml
+data = """
+--- 
+!<tag:clarkevans.com,2002:invoice> invoice: 34843
+date   : 2001-01-23
+""" 
+ 
+parsed = list(yaml.scan(data)) 
+print(parsed)
+```
+
+
+
 # Installation
 
 install it from source using luarocks:
