@@ -17,6 +17,15 @@ local function utf8(codepoint)
 	end
 end
 
+---decode the url encoded string
+local function url_decode(str)
+	str = string.gsub(str, "%%(%x%x)", function(hex)
+		return string.char(tonumber(hex, 16))
+	end)
+	str = string.gsub(str, "+", " ")
+	return str
+end
+
 function Lexer:new(doc)
 	local o = {}
 	self.__index = self
@@ -104,10 +113,8 @@ end
 
 local function skipper(n)
 	return function(self)
-		print("skip " .. n)
 		self:next_char(n)
 		while self:peek() == " " or self:peek() == "\t" do
-			print("skip space")
 			self:next_char()
 		end
 	end
@@ -338,6 +345,8 @@ local states = {
 		{ "...", "END_DOC", skipper(3), "STREAM" },
 		{ "\n", "", Lexer.nl, "DOC" },
 		{ "!", "", Lexer.tag },
+		{ '"', "", Lexer.quoted, "BLOCK" },
+		{ "'", "", Lexer.quoted, "BLOCK" },
 		{ "", "", nil, "BLOCK" },
 	},
 	BLOCK_IN = {
@@ -359,6 +368,7 @@ local states = {
 		{ "}", "MAP_END", skipper(1) },
 		{ ",", "SEP", skipper(1) },
 		{ ":", "COLON", skipper(1) },
+		{ "#", "", Lexer.comment },
 		{ "_", "CHARS", Lexer.collect },
 	},
 	BLOCK = {
@@ -403,6 +413,7 @@ function Lexer:process_rules()
 				end
 			end
 			if #self.chars > 0 then
+				print("ADD CHARS = '" .. table.concat(self.chars, "") .. "'")
 				table.insert(self.tokens, {
 					kind = "CHARS",
 					indent = self.indent,
@@ -498,7 +509,8 @@ function Parser:new(tokens)
 	o.tokens = tokens
 	o.index = 0
 	o.result = {}
-	o.global_tag = "tag:yaml.org,2002"
+	o.global_tag = "yaml.org,2002:"
+	o.named_tag = {}
 	o.local_tag = nil
 	return o
 end
@@ -533,7 +545,6 @@ function Parser:skip(kind)
 end
 
 function Parser:value(str)
-	print("'" .. str .. "'")
 	if string.match(str, "\\x%x%x") then
 		str = string.gsub(str, "\\x(%x%x)", function(hex)
 			return string.char(tonumber(hex, 16))
@@ -578,11 +589,11 @@ function Parser:push(kind, node)
 			node.anchor = nil
 		end
 	end
-	print("parent: " .. to_string(self.tokens[self.index]))
+	-- print("parent: " .. to_string(self.tokens[self.index]))
 	if node.tag then
-		print("found tag: " .. the_node.tag.value)
+		-- print("found tag: " .. the_node.tag.value)
 		if node.tag.indent ~= node.indent or node.tag.before then
-			print("tags child indent does not match: ")
+			-- print("tags child indent does not match: ")
 			the_node = {
 				indent = the_node.indent,
 				kind = kind,
@@ -619,6 +630,7 @@ function Parser:collection(indent)
 	local node = self:peek()
 	self:push("+SEQ", node)
 	local act_indent = self:peek().indent
+	print("+SEQ: " .. self:peek().indent)
 	while self:peek() and self:match("DASH") and self:peek().indent == act_indent do
 		self:skip("DASH")
 		if self:match("DASH") then
@@ -641,6 +653,7 @@ function Parser:collection(indent)
 			act_indent = self:peek().indent
 		end
 	end
+	print("-SEQ")
 	table.insert(self.result, { kind = "-SEQ", value = node })
 end
 
@@ -648,13 +661,15 @@ function Parser:map(indent)
 	local node = self:peek()
 	self:push("+MAP", node)
 	local act_indent = self:peek().indent
+	print("+MAP: " .. indent .. "->" .. to_string(self:peek()))
 	while self:peek() and self:match("CHARS", "COLON") and self:peek().indent == act_indent do
+		print(" MAP: " .. indent .. "->" .. to_string(self:peek()))
 		table.insert(self.result, { kind = "VAL", value = self:next() })
 		self:skip("COLON")
 		if self:match("CHARS", "COLON") then
 			self:map(act_indent)
-		-- elseif self:peek().kind == "DASH" then
-		-- 	self:collection(act_indent)
+		elseif self:match("DASH") then
+			self:collection(act_indent)
 		elseif self:peek().kind == "CHARS" then
 			self:scalar()
 		elseif self:peek().kind == "LITERAL" then
@@ -665,39 +680,37 @@ function Parser:map(indent)
 			self:flow_seq()
 		elseif self:match("MAP_START") then
 			self:flow_map()
-		elseif self:match("KEY") then
-			print("found key in map")
-			self:next()
-			self:map(act_indent)
-			-- if self:match("CHARS", "COLON") then
-			-- 	table.insert(self.result, { kind = "VAL", value = self:next() })
-			-- 	self:next()
-			-- 	table.insert(self.result, { kind = "VAL", value = self:next() })
-			-- else
-			-- 	error("no key value pair")
-			-- end
+		elseif self:match("KEY", "CHARS", "COLON", "CHARS") then
+			self:parse(self:peek().indent)
 		else
 			self:parse(self:peek().indent)
 		end
-		if self:peek() and act_indent == indent and self:peek().indent > act_indent then
+		if self:peek() and self:peek().indent > act_indent then
 			act_indent = self:peek().indent
 		end
 	end
 	table.insert(self.result, { kind = "-MAP", value = node })
 end
 
-function Parser:explicit_key()
-	local key = self:next()
-	if self:match("CHARS", "COLON") then
-		print("inesrt key")
-		table.insert(self.result, { kind = "+MAP", value = key })
-		table.insert(self.result, { kind = "VAL", value = self:next() })
+function Parser:explicit_key(indent)
+	local key = self:peek()
+	table.insert(self.result, { kind = "+MAP", value = key })
+	local act_indent = self:peek().indent
+	while self:peek() and self:peek().kind == "KEY" and act_indent >= indent do
 		self:next()
-		table.insert(self.result, { kind = "VAL", value = self:next() })
-		table.insert(self.result, { kind = "-MAP", value = key })
-	else
-		error('key does not have "CHARS", "COLON"')
+		if self:match("CHARS", "COLON", "CHARS") then
+			table.insert(self.result, { kind = "VAL", value = self:next() })
+			self:next()
+			table.insert(self.result, { kind = "VAL", value = self:next() })
+			table.insert(self.result, { kind = "-MAP", value = key })
+		elseif self:match("CHARS") then
+			table.insert(self.result, { kind = "VAL", value = self:next() })
+			table.insert(self.result, { kind = "VAL", value = "" })
+		else
+			error('key does not have "CHARS", "COLON"')
+		end
 	end
+	table.insert(self.result, { kind = "-MAP", value = key })
 end
 
 function Parser:flow_map()
@@ -724,10 +737,13 @@ function Parser:flow_seq()
 	table.insert(self.result, { kind = "+SEQ []", value = node })
 	while self:peek().kind ~= "SEQ_END" do
 		if self:match("COLON") then
-			print("SEQ COLON")
 			return -1, "COLON not allowed here"
 		elseif self:match("CHARS") then
-			table.insert(self.result, { kind = "VAL", value = self:next() })
+			print("SEQ insert VAL: " .. to_string(self:peek()))
+			local val = self:next()
+			if val.value ~= "" then -- TODO: handle empty values
+				table.insert(self.result, { kind = "VAL", value = val })
+			end
 			if self:peek().kind == "SEP" then
 				self:next()
 			end
@@ -739,11 +755,16 @@ function Parser:flow_seq()
 end
 
 function Parser:folded()
+	print("FOLDED  " .. (self:peek().chopped and "chopped" or "not chopped"))
 	local result = {}
 	local folded_node = self:next()
 	local indent = self:peek().indent
 	local blank_line = false
-	while self:peek() and (self:peek().kind == "CHARS" or self:peek().kind == "NL") and self:peek().indent >= indent do
+	while
+		self:peek()
+		and (self:peek().kind == "CHARS" or self:peek().kind == "NL")
+		and (self:peek().indent >= indent or (self:peek() and self:peek().value == ""))
+	do
 		local spacer = " "
 		local n = self:next()
 		if self:peek() and self:peek().kind == "NL" then
@@ -751,10 +772,12 @@ function Parser:folded()
 			self:next()
 			blank_line = true
 		elseif self:peek() and trim(self:peek().value) == "" then
-			spacer = "\\n\\n"
-			self:next()
-		elseif blank_line then
 			spacer = "\\n"
+			self:next()
+		elseif self:peek() and self:peek().indent > indent then
+			spacer = "\\n"
+			-- elseif blank_line then
+			-- 	spacer = "\\n"
 		end
 		local r = n.indent - indent
 		table.insert(result, string.rep(" ", r) .. n.value .. spacer)
@@ -765,7 +788,8 @@ function Parser:folded()
 	if string.sub(res, #res, #res) == " " then
 		res = string.sub(res, 1, #res - 1)
 	end
-	folded_node.value = res .. (blank_line and "" or "\\n")
+	print("chopped " .. (folded_node.chopped and "true" or "false"))
+	folded_node.value = res .. (folded_node.chopped and "" or "\\n")
 	table.insert(self.result, { kind = "VAL", value = folded_node })
 end
 
@@ -818,15 +842,16 @@ end
 function Parser:parse_tag(tag_value)
 	local tag_result
 	print("PARSE TAG: " .. tag_value)
-	if string.match(tag_value, "^!<(.*)>$") then
+	if string.match(tag_value, "^!(.+)!(.+)$") then
+		local k, t = string.match(tag_value, "^!(.*)!(.*)$")
+		print("Named Tag" .. k .. "++" .. to_string(self.named_tag))
+		tag_result = "<" .. self.named_tag[k] .. url_decode(t) .. ">"
+	elseif string.match(tag_value, "^!<(.*)>$") then
 		tag_result = "<" .. string.match(tag_value, "^!<(.*)>$") .. ">"
 	elseif string.match(tag_value, "^!!(.*)") then
-		tag_result = "<" .. self.global_tag .. ":" .. string.match(tag_value, "^!!(.*)") .. ">"
+		tag_result = "<tag:" .. self.global_tag .. string.match(tag_value, "^!!(.*)") .. ">"
 	elseif string.match(tag_value, "^!(.*)") then
-		tag_result = "<"
-			.. (self.local_tag and self.local_tag .. ":" or "!")
-			.. string.match(tag_value, "^!(.*)")
-			.. ">"
+		tag_result = "<" .. (self.local_tag and self.local_tag or "!") .. string.match(tag_value, "^!(.*)") .. ">"
 	end
 	print("TAG RESULT: " .. tag_result)
 	return tag_result
@@ -845,6 +870,9 @@ function Parser:parse(indent)
 		elseif self:match("END_DOC") then
 			table.insert(self.result, { kind = "END_DOC" })
 			self:next()
+			self.global_tag = "yaml.org,2002:"
+			self.named_tag = {}
+			self.local_tag = nil
 		elseif self:match("DASH") then
 			self:collection(indent)
 		elseif self:match("CHARS", "COLON") then
@@ -856,7 +884,7 @@ function Parser:parse(indent)
 		elseif self:match("MAP_START") then
 			self:flow_map()
 		elseif self:match("KEY") then
-			self:explicit_key()
+			self:explicit_key(indent)
 		-- TODO: remove
 		elseif self:match("ANCHOR") then
 			table.insert(self.result, { kind = "ANCHOR", value = self:next() })
@@ -868,8 +896,13 @@ function Parser:parse(indent)
 			self:literal()
 		elseif self:match("TAG") then
 			local act_tag = self:next().value
-			if string.match(act_tag, "^TAG ! tag:(.*):$") then
-				self.local_tag = string.match(act_tag, "^TAG ! (.*):$")
+			if string.match(act_tag, "^TAG !(.+)! (.+)$") then
+				local key, uri = string.match(act_tag, "^TAG !(.+)! (.+)$")
+				self.named_tag[key] = uri
+			elseif string.match(act_tag, "^TAG !! tag:(.*)$") then
+				self.global_tag = string.match(act_tag, "^TAG !! tag:(.*)$")
+			elseif string.match(act_tag, "^TAG ! tag:(.*)$") then
+				self.local_tag = string.match(act_tag, "^TAG ! (.*)$")
 				print("LOCAL TAG: " .. to_string(self.local_tag))
 			else
 				print("TAGDEF: " .. to_string(act_tag))
@@ -890,7 +923,7 @@ function Parser:__tostring()
 	local doc_started = false
 	local anchor = nil
 	for i, item in ipairs(self.result) do
-		print("to_string: " .. to_string(item))
+		-- print("to_string: " .. to_string(item))
 		if i == 1 and item.kind ~= "START_DOC" then
 			table.insert(str, " +DOC")
 			doc_started = true
@@ -967,9 +1000,13 @@ function Parser:__tostring()
 end
 
 local str = [[
---- !<tag:clarkevans.com,2002:invoice>
-invoice: 34843
-date   : 2001-01-23
+sequence:
+- one
+- two
+mapping:
+  ? sky
+  : blue
+  sea : green
 ]]
 
 -- local lexer = Lexer:new(str)

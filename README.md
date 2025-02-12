@@ -42,6 +42,14 @@ print(string.match(str, "^(:%s)", 1))
 ```
 
 ```py
+from urllib.parse import unquote
+
+url = unquote("!e!tag%21")
+print(url)
+```
+
+
+```py
 import yaml
 
 data = """
