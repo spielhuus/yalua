@@ -28,7 +28,8 @@ context: |
 preview: return function(args, data) require("lungan.nvim.diff").preview(args, data) end
 options:
   temperature: 0.01
-  num_ctx: 4096]]
+  num_ctx: 4096
+ ]]
 
 		local expect = {
 			provider = {
@@ -43,7 +44,8 @@ options:
 			},
 			system_prompt = [[You are a senior Lua programmer specializing in Neovim plugins.
 Only answer the users question. be precise and concise.
-Do not add any examples, usages, outputs and for sure no introduction.]],
+Do not add any examples, usages, outputs and for sure no introduction.
+]],
 			context = [[return function(buf, line1, line2)
   local code = ""
   if line2 > line1 then
@@ -52,7 +54,8 @@ Do not add any examples, usages, outputs and for sure no introduction.]],
   return {
           code = code
   }
-end]],
+end
+]],
 			preview = 'return function(args, data) require("lungan.nvim.diff").preview(args, data) end',
 			options = {
 				temperature = 0.01,

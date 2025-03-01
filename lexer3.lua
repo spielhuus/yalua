@@ -413,6 +413,13 @@ function Lexer:process_rules()
 				end
 			end
 			if #self.chars > 0 then
+				-- if
+				-- 	#self.tokens > 0
+				-- 	and self.tokens[#self.tokens].kind == "CHARS"
+				-- 	and (self.tokens[#self.tokens].type == '"' or self.tokens[#self.tokens].type == "'")
+				-- then
+				-- 	print("last is chars: " .. to_string(self.tokens[#self.tokens]))
+				-- else
 				print("ADD CHARS = '" .. table.concat(self.chars, "") .. "'")
 				table.insert(self.tokens, {
 					kind = "CHARS",
@@ -428,6 +435,7 @@ function Lexer:process_rules()
 				self.act_anchor = nil
 				self.act_alias = nil
 				self.act_tag = nil
+				-- end
 			end
 			if name ~= "" then
 				table.insert(self.tokens, {
@@ -572,6 +580,7 @@ function Parser:value(str)
 end
 
 function Parser:push(kind, node)
+	print("push: " .. to_string(node))
 	local the_node = node
 	if node.anchor then
 		if node.anchor.indent ~= node.indent then
@@ -591,9 +600,9 @@ function Parser:push(kind, node)
 	end
 	-- print("parent: " .. to_string(self.tokens[self.index]))
 	if node.tag then
-		-- print("found tag: " .. the_node.tag.value)
+		print("found tag: " .. the_node.tag.value)
 		if node.tag.indent ~= node.indent or node.tag.before then
-			-- print("tags child indent does not match: ")
+			print("tags child indent does not match: ")
 			the_node = {
 				indent = the_node.indent,
 				kind = kind,
@@ -607,6 +616,17 @@ function Parser:push(kind, node)
 				col = the_node.col,
 			}
 			node.tag = nil
+		else
+			print("CHILD node matches")
+			the_node = {
+				indent = the_node.indent,
+				kind = kind,
+				anchor = the_node.anchor,
+				alias = the_node.alias,
+				value = the_node.value,
+				row = the_node.row,
+				col = the_node.col,
+			}
 		end
 	elseif self.tokens[self.index] and self.tokens[self.index].tag then
 		print("found parent node with tag")
@@ -634,6 +654,7 @@ function Parser:collection(indent)
 	while self:peek() and self:match("DASH") and self:peek().indent == act_indent do
 		self:skip("DASH")
 		if self:match("DASH") then
+			print("found dash")
 			self:collection(act_indent)
 		elseif self:match("CHARS", "COLON") then
 			self:map(indent)
@@ -646,7 +667,12 @@ function Parser:collection(indent)
 		elseif self:match("ANCHOR") then -- TODO remove?
 			error("found anchor")
 			self:flow_map()
+		elseif self:match("FOLDED") then
+			self:folded()
+		elseif self:match("LITERAL") then
+			self:literal()
 		else
+			print("nothin found: " .. self:peek().kind)
 			self:parse(self:peek().indent)
 		end
 		if self:peek() and act_indent == indent and self:peek().indent > act_indent then
@@ -718,6 +744,7 @@ function Parser:flow_map()
 	table.insert(self.result, { kind = "+MAP {}", value = node })
 	while self:peek().kind ~= "MAP_END" do
 		if self:match("CHARS", "COLON", "CHARS") then
+			print("to_string: " .. to_string(self:peek()))
 			table.insert(self.result, { kind = "VAL", value = self:next() })
 			self:next()
 			table.insert(self.result, { kind = "VAL", value = self:next() })
@@ -765,19 +792,18 @@ function Parser:folded()
 		and (self:peek().kind == "CHARS" or self:peek().kind == "NL")
 		and (self:peek().indent >= indent or (self:peek() and self:peek().value == ""))
 	do
+		print(" ++ folded: " .. to_string(self:peek()))
 		local spacer = " "
 		local n = self:next()
 		if self:peek() and self:peek().kind == "NL" then
 			spacer = "\\n\\n"
 			self:next()
 			blank_line = true
-		elseif self:peek() and trim(self:peek().value) == "" then
+		elseif self:peek() and self:peek().kind == "CHARS" and trim(self:peek().value) == "" then
 			spacer = "\\n"
 			self:next()
 		elseif self:peek() and self:peek().indent > indent then
 			spacer = "\\n"
-			-- elseif blank_line then
-			-- 	spacer = "\\n"
 		end
 		local r = n.indent - indent
 		table.insert(result, string.rep(" ", r) .. n.value .. spacer)
@@ -813,6 +839,33 @@ function Parser:literal()
 	table.insert(self.result, { kind = "VAL", value = literal_node })
 end
 
+function Parser:chars()
+	print("process chars")
+	local result = {}
+	local literal_node = self:next()
+	local indent = literal_node.indent
+	local blank_line = false
+	while self:peek() and (self:peek().kind == "CHARS" or self:peek().kind == "NL") and self:peek().indent >= indent do
+		local n = self:next()
+		if n.value == "" then
+			print("EMPTY CHARS: " .. to_string(n))
+			table.insert(result, "\n")
+		else
+			local r = n.indent - indent
+			table.insert(result, string.rep(" ", r) .. trim(n.value) .. " ")
+		end
+	end
+	literal_node.kind = "VAL"
+	local res = table.concat(result, "")
+	-- while string.sub(res, #res, #res) == " " do
+	-- 	print("remove space " .. res)
+	-- 	res = string.sub(res, 1, #res - 1)
+	-- end
+	-- literal_node.value = res .. (blank_line or literal_node.chopped and "" or "\n")
+	literal_node.value = literal_node.value .. res
+	table.insert(self.result, { kind = "VAL", value = literal_node })
+end
+
 function Parser:scalar()
 	local last_indent
 	if #self.result == 1 then
@@ -822,6 +875,7 @@ function Parser:scalar()
 	end
 	local indent = self:peek().indent
 	if last_indent == indent then
+		print("scalar: indent: " .. indent)
 		table.insert(self.result, { kind = "VAL", value = self:next() })
 	else
 		local node = self:peek()
@@ -832,6 +886,7 @@ function Parser:scalar()
 			and self:peek().indent >= indent
 			and not (self:peek(2) and self:peek(2).kind == "COLON")
 		do
+			print(" ++ scalar: indent: " .. indent)
 			table.insert(result, self:next().value)
 		end
 		node.value = table.concat(result, " ")
@@ -842,7 +897,9 @@ end
 function Parser:parse_tag(tag_value)
 	local tag_result
 	print("PARSE TAG: " .. tag_value)
-	if string.match(tag_value, "^!(.+)!(.+)$") then
+	if string.match(tag_value, "^!<!(.+)>$") then -- verbatim tag
+		tag_result = string.sub(tag_value, 2)
+	elseif string.match(tag_value, "^!(.+)!(.+)$") then
 		local k, t = string.match(tag_value, "^!(.*)!(.*)$")
 		print("Named Tag" .. k .. "++" .. to_string(self.named_tag))
 		tag_result = "<" .. self.named_tag[k] .. url_decode(t) .. ">"
@@ -878,7 +935,8 @@ function Parser:parse(indent)
 		elseif self:match("CHARS", "COLON") then
 			self:map(indent)
 		elseif self:match("CHARS") then
-			table.insert(self.result, { kind = "VAL", value = self:next() })
+			-- table.insert(self.result, { kind = "VAL", value = self:next() })
+			self:chars()
 		elseif self:match("SEQ_START") then
 			res, msg = self:flow_seq()
 		elseif self:match("MAP_START") then
@@ -903,7 +961,6 @@ function Parser:parse(indent)
 				self.global_tag = string.match(act_tag, "^TAG !! tag:(.*)$")
 			elseif string.match(act_tag, "^TAG ! tag:(.*)$") then
 				self.local_tag = string.match(act_tag, "^TAG ! (.*)$")
-				print("LOCAL TAG: " .. to_string(self.local_tag))
 			else
 				print("TAGDEF: " .. to_string(act_tag))
 			end
@@ -959,6 +1016,7 @@ function Parser:__tostring()
 			table.insert(str, string.format("%sALI *%s", string.rep(" ", indent), item.value.value))
 		else
 			if item.value.alias then
+				assert(false, "is anchor")
 				table.insert(str, string.format("%s=ALI *%s", string.rep(" ", indent), trim(item.value.alias.value)))
 				anchor = nil
 			else
@@ -1000,22 +1058,18 @@ function Parser:__tostring()
 end
 
 local str = [[
-sequence:
-- one
-- two
-mapping:
-  ? sky
-  : blue
-  sea : green
+foo: &anchor bar
+some: other
+what: *anchor
 ]]
 
--- local lexer = Lexer:new(str)
--- lexer:lexme()
--- print(tostring(lexer))
--- local parser = Parser:new(lexer.tokens)
--- parser:parse()
--- print("---------------------------------")
--- print(tostring(parser))
+local lexer = Lexer:new(str)
+lexer:lexme()
+print(tostring(lexer))
+local parser = Parser:new(lexer.tokens)
+parser:parse()
+print("---------------------------------")
+print(tostring(parser))
 
 return {
 	stream = function(doc)

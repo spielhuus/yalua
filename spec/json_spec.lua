@@ -1,7 +1,7 @@
 local assert = require("luassert")
 local yalua = require("yalua")
 
-describe("Test the YAML LLM promopts #json", function()
+describe("Test the #json tests", function()
 	it("it should parse a plain json file", function()
 		local json = [[{
   "user": {
@@ -30,9 +30,9 @@ describe("Test the YAML LLM promopts #json", function()
 		local res = yalua.decode(json)
 		assert.is.Same(expect, res)
 	end)
+
 	it("it should parse a plain json array", function()
 		local json = [[
-[
     "item1",
     "item2",
     "item3"

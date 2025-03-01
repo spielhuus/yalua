@@ -41,43 +41,68 @@ print(string.match(str, "^(:%s)", 1))
 
 ```
 
-```py
-from urllib.parse import unquote
-
-url = unquote("!e!tag%21")
-print(url)
-```
-
 
 ```py
 import yaml
 
 data = """
----
-- - !!set !!str list 1
-  - list 2
-    - list 3
+>
+ folded
+ text
+  
+
+ a
+
 """
 
 parsed = yaml.safe_load(data)
 
-print(parsed)
+print("'" + parsed + "'")
 
 ```
 
 ```py
 import yaml
-data = """
---- 
-!<tag:clarkevans.com,2002:invoice> invoice: 34843
-date   : 2001-01-23
-""" 
- 
-parsed = list(yaml.scan(data)) 
+data  = """
+aaaabc: def # comment
+"""
+parsed = yaml.safe_load(data)
 print(parsed)
 ```
 
+```py
+import yaml
+data  = """
+aaaabc def # comment
+"""
+parsed = yaml.safe_load(data)
+print(parsed)
+```
 
+```py
+import yaml
+data  = """
+aaaabc def # comment: value
+
+"""
+parsed = yaml.safe_load(data)
+print(parsed)
+```
+
+```py
+import yaml
+
+data  = """
+- # Empty
+- |
+ block node
+- - one # Compact
+  - two # sequence
+- one: two # Compact mapping
+"""
+parsed = yaml.safe_load(data)
+print(parsed)
+```
 
 # Installation
 
