@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local Lexer = require("Lexer3")
+local Lexer = require("Lexer")
 local StringIterator = require("StringIterator")
 
 describe("Test if the Lexer lexes", function()
@@ -245,6 +245,36 @@ mom: happy
 -MAP
 =VAL :mom
 =VAL :happy
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a map with empty characters and #tabs", function()
+		local doc = [[
+
+a: b	
+seq:	
+ - a	
+c: d	#X
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :a
+=VAL :b
+=VAL :seq
++SEQ
+=VAL :a
+-SEQ
+=VAL :c
+=VAL :d
 -MAP
 -DOC
 -STR

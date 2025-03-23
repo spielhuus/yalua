@@ -1,5 +1,5 @@
 local assert = require("luassert")
-local Lexer = require("Lexer3")
+local Lexer = require("Lexer")
 
 local function load_file(file_path)
 	local file = io.open(file_path, "r")
