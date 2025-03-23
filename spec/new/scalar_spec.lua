@@ -39,6 +39,23 @@ describe("Test Scalars", function()
 			assert.Equal("CHARS", lexer.tokens[5].kind)
 			assert.Equal("END_DOC", lexer.tokens[6].kind)
 		end)
+
+		it("should handle [] in content #subject", function()
+			local doc = [[ 
+- key: value with [brackets]
+]]
+			local iter = StringIterator:new(doc)
+			local lexer = Lexer:new(iter)
+			print(tostring(lexer))
+			assert(lexer)
+
+			assert.Equal("DASH", lexer.tokens[1].kind)
+			assert.Equal("CHARS", lexer.tokens[2].kind)
+			assert.Equal("key", lexer.tokens[2].value)
+			assert.Equal("COLON", lexer.tokens[3].kind)
+			assert.Equal("CHARS", lexer.tokens[4].kind)
+			assert.Equal("value with [brackets]", lexer.tokens[4].value)
+		end)
 	end)
 	describe("Test Scalar value in Parser", function()
 		it("should handle #exclude", function()

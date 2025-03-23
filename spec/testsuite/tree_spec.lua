@@ -1292,12 +1292,15 @@ describe("Run the YAML test #suite, compare with TREE", function()
 			assert.is.Same(tree, remove_all_trailing_spaces(result))
 		end
 	)
-	it("should parse the Wrong indendation in Sequence, file: #4HVU tags: #error #sequence #indent", function()
-		print("### should parse the Wrong indendation in Sequence, file: #4HVU")
-		local input = load_file("./yaml-test-suite/data/4HVU/in.yaml")
-		local result = yalua.stream(input)
-		assert.Equal(nil, result)
-	end)
+	it(
+		"should parse the Wrong indendation in Sequence, file: #4HVU tags: #error #sequence #indent",
+		function() -- USED -- USED
+			print("### should parse the Wrong indendation in Sequence, file: #4HVU")
+			local input = load_file("./yaml-test-suite/data/4HVU/in.yaml")
+			local result = yalua.stream(input)
+			assert.Equal(nil, result)
+		end
+	)
 	it("should parse the Spec Example 7.14. Flow Sequence Entries, file: #8UDB tags: #spec #flow #sequence", function()
 		print("### should parse the Spec Example 7.14. Flow Sequence Entries, file: #8UDB")
 		local input = load_file("./yaml-test-suite/data/8UDB/in.yaml")

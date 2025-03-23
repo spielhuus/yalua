@@ -1,6 +1,8 @@
 local to_string = require("str").to_string
 local trim = require("str").trim
 
+local print = function(...) end
+
 ---escape the backslashes
 local function escape(str)
 	return (str:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\b", "\\b"):gsub("\t", "\\t"))

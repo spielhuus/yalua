@@ -1,6 +1,6 @@
 local StringIterator = require("StringIterator")
 local Lexer = require("Lexer")
-local Parser = require("Parser")
+local Parser = require("Parser2")
 
 local function value(val)
 	if val == "true" then
@@ -96,17 +96,28 @@ end
 
 return {
 	stream = function(str)
+		print("'" .. str .. "'")
 		local iter = StringIterator:new(str)
 		local lexer, mes = Lexer:new(iter)
 		if not lexer then
 			return lexer, mes
 		end
-		print(tostring(lexer))
-		local parser = Parser:new(lexer)
-		return tostring(parser)
+		return tostring(lexer)
 	end,
 	decode = function(str)
 		local iter = StringIterator:new(str)
+		local lexer = Lexer:new(iter)
+		local parser = Parser:new(lexer)
+		return decode(parser)
+	end,
+	parse = function(path)
+		local file = io.open(path, "r")
+		if not file then
+			return nil, "can not open file " .. path
+		end
+		local content = file:read("*all")
+		file:close()
+		local iter = StringIterator:new(content)
 		local lexer = Lexer:new(iter)
 		local parser = Parser:new(lexer)
 		return decode(parser)

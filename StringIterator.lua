@@ -72,12 +72,68 @@ function StringIterator:next(n)
 	return table.concat(chars, "")
 end
 
+---Test if the line is empty, or only has spaces
+function StringIterator:empty_line(seek)
+	local index = seek or 1
+	while self:peek(index) and self:peek(index) ~= "\n" do
+		if self:peek(index) ~= " " and self:peek(index) ~= "\n" then
+			return false
+		else
+			index = index + 1
+		end
+	end
+	return true
+end
+
+---Skip all the spaces
+function StringIterator:skip_space()
+	while self:peek() and self:peek() == " " do
+		self:next()
+	end
+end
+
+---Rewind n characters in the iterator
+---@param n integer Number of characters to rewind
+---@return nil
+function StringIterator:rewind(n)
+	if self.index == 1 then
+		return
+	end
+	self.index = self.index - (n or 1)
+	self.col = self.col - (n or 1)
+	if self.col <= 0 then
+		self.row = self.row - 1
+		local cursor = self.index
+		self.col = 0
+		while string.sub(self.str, cursor, cursor) ~= "\n" and cursor > 0 do
+			cursor = cursor - 1
+			self.col = self.col + 1
+		end
+	end
+end
+
 --- Checks if the next characters in the iterator match the given string.
 ---@param str string The string to compare against the current position in the iterator.
+---@param pos integer? position from where the string should match
 ---@return boolean Returns true if the next characters match the given string, otherwise false.
-function StringIterator:match(str)
-	local s = string.sub(self.str, self.index + 1, self.index + #str)
+function StringIterator:match(str, pos)
+	local s = string.sub(self.str, self.index + 1 + (pos or 0), self.index + #str + (pos or 0))
 	return s == str
+end
+
+--- Get a line from the YAML by number
+---@param nr integer The line number
+---@return string|nil Returns the content of the line
+function StringIterator:line(nr)
+	local lines = {}
+	for s in string.gmatch(self.str, "[^\n]+") do
+		table.insert(lines, s)
+	end
+	if nr >= 1 and nr <= #lines then
+		return lines[nr]
+	else
+		return nil
+	end
 end
 
 return StringIterator

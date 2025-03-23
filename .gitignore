@@ -45,3 +45,4 @@ luac.out
 *.bak
 
 *.log
+libfyaml

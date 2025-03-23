@@ -19,7 +19,3 @@ files["spec/*"].ignore = { "631" }
 exclude_files = {
 	".luarocks",
 }
--- Global objects defined by the C code
--- read_globals = {
--- 	"vim",
--- }
