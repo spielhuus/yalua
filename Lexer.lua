@@ -58,6 +58,10 @@ function Lexer:new(iter)
 end
 
 function Lexer:error(mess)
+	assert(mess)
+	assert(self.iter.row)
+	assert(self.iter.col)
+	print(mess)
 	return "ERROR:"
 		.. self.iter.row
 		.. ":"
@@ -143,7 +147,7 @@ function Lexer:is_comment(seek)
 	while self.iter:peek(index) and self.iter:peek(index) ~= "\n" do
 		if self.iter:peek(index) == "#" then
 			return true
-		elseif self.iter:peek(index) ~= " " and self.iter:peek() ~= "\t" then
+		elseif self.iter:peek(index) ~= " " and self.iter:peek(index) ~= "\t" then
 			return false
 		end
 		index = index + 1
@@ -161,7 +165,22 @@ function Lexer:comment()
 		self.iter:next()
 		self:comment()
 	end
+	self.iter:next()
+	while not self.iter:eof() and self.iter:empty_line() do
+		print("empty line")
+		self.iter:skip_space()
+		self.iter:next()
+	end
+	self.iter:rewind(1)
 	return OK
+end
+
+function Lexer:expect_comment()
+	if self:is_comment() then
+		self:comment()
+		return true
+	end
+	return false
 end
 
 ---Skip separators like spaces, line breaks ... TODO: skip space?
@@ -178,6 +197,7 @@ function Lexer:sep()
 end
 
 function Lexer:scalar(indent, floating)
+	print("scalar : " .. indent .. ", floating: " .. (tostring(floating)))
 	local chars = {}
 	while self.iter:peek() and self.iter:peek() ~= NL do
 		if self.iter:match(" #") or self.iter:match("\t#") then
@@ -199,6 +219,21 @@ function Lexer:scalar(indent, floating)
 			end
 		end
 		self.iter:rewind(1)
+	elseif self:next_indent() > indent then
+		print("lines bigger: " .. tostring(self:is_key()) .. ". next: '" .. self.iter:peek() .. "'")
+		self.iter:next()
+		if self:is_key() then
+			self.iter:skip_space()
+			return ERR, self:error("invalid multiline plain key")
+		end
+		local lines = self:scalar_lines(self:indent())
+		for _, line in ipairs(lines) do
+			if line ~= "" then
+				print("add line '" .. line .. "'")
+				txt = txt .. " " .. line
+			end
+		end
+		self.iter:rewind(1)
 	end
 
 	table.insert(self.tokens, {
@@ -212,10 +247,12 @@ function Lexer:scalar(indent, floating)
 end
 
 function Lexer:scalar_lines(indent)
+	print("scalar lines: " .. indent)
 	local lines = {}
 	while not self.iter:eof() do
 		if self.iter:empty_line() then
 			table.insert(lines, "")
+			self.iter:skip_space()
 			self.iter:next()
 		elseif self:indent() < indent then
 			return lines
@@ -264,11 +301,33 @@ function Lexer:quoted(indent)
 	table.insert(lines, table.concat(chars, ""))
 	-- addup lines
 	local txt
-	for _, line in ipairs(lines) do
+	local after_nl = false
+
+	print(">>>" .. require("str").to_string(lines))
+	for i, line in ipairs(lines) do
+		print("quoted: " .. tostring(after_nl) .. " " .. require("str").to_string(escape(trim(line, true))))
 		if not txt then
 			txt = line
 		else
-			txt = txt .. " " .. trim(line, true)
+			print("line: '" .. line .. "'")
+			if #trim(line) == 0 then
+				-- add NL if not last line, otherwise space
+				if i ~= #lines then
+					print("empty_line")
+					txt = txt .. "\n" .. trim(line, true)
+					after_nl = true
+				else
+					txt = txt .. " "
+				end
+			else
+				if after_nl then
+					print("insert without space: " .. line)
+					txt = txt .. trim(line, true)
+					after_nl = false
+				else
+					txt = txt .. " " .. trim(line, true)
+				end
+			end
 		end
 	end
 	table.insert(self.tokens, {
@@ -280,15 +339,41 @@ function Lexer:quoted(indent)
 	return OK
 end
 
+function Lexer:folded_attrs()
+	local chopped = false
+	while self.iter:peek() ~= NL do
+		print("next char: " .. self.iter:peek())
+		if self.iter:peek() == "-" then
+			chopped = true
+			self.iter:next()
+		elseif self.iter:peek() == "+" then
+			chopped = false
+			self.iter:next()
+		else
+			error("unknown literal attribute: " .. self.iter:peek())
+		end
+	end
+	return chopped
+end
+
 function Lexer:folded(indent)
+	assert(self.iter:peek() == ">")
+	self.iter:next()
+	local chopped = self:folded_attrs()
 	local lines = self:scalar_lines(indent)
 	print(require("str").to_string(lines))
 	local indented = false
+	local after_first = false
+	local empty_line = false
 	local result = ""
 	for _, line in ipairs(lines) do
 		if line == "" then
-			result = result .. "\n"
-		elseif string.sub(line, 1, 1) == " " then
+			if after_first then
+				result = result .. "\n"
+				empty_line = true
+			end
+		elseif string.sub(line, 1, 1) == " " or string.sub(line, 1, 1) == "\t" then
+			-- more indented line
 			result = result .. "\n" .. line
 			indented = true
 		else
@@ -297,13 +382,20 @@ function Lexer:folded(indent)
 			else
 				if indented then
 					result = result .. "\n" .. line
+				elseif empty_line then
+					empty_line = false
+					result = result .. line
 				else
 					result = result .. " " .. line
 				end
 			end
+			after_first = true
+			indented = false
 		end
 	end
-	result = result .. "\n"
+	if not chopped then
+		result = result .. "\n"
+	end
 	return result
 end
 
@@ -328,7 +420,12 @@ function Lexer:literal(indent)
 	self.iter:next()
 	while not self.iter:eof() do
 		if self.iter:peek() == NL then
-			if self:next_indent() < indent then
+			print("literal next line: '" .. self.iter:peek() .. "'" .. indent .. ", " .. self:next_indent())
+			if self.iter:empty_line(2) then
+				print("is empty line")
+				self.iter:next()
+				self.iter:skip_space()
+			elseif self:next_indent() < indent then
 				-- conusume last line
 				table.insert(lines, string.sub(table.concat(chars, ""), indent + 1))
 				if not chopped then
@@ -337,6 +434,7 @@ function Lexer:literal(indent)
 				-- create the text
 				local txt = table.concat(lines, NL)
 				table.insert(self.tokens, { kind = "CHARS", value = txt, type = "literal", indent = 0 })
+				print("return from literal")
 				return OK
 			else
 				self.iter:next()
@@ -346,6 +444,31 @@ function Lexer:literal(indent)
 		else
 			table.insert(chars, self.iter:next())
 		end
+	end
+	-- conusume last line
+	table.insert(lines, string.sub(table.concat(chars, ""), indent + 1))
+	if not chopped then
+		table.insert(lines, "")
+	end
+	-- create the text
+	local txt = table.concat(lines, NL)
+	table.insert(self.tokens, { kind = "CHARS", value = txt, type = "literal", indent = 0 })
+	return OK
+end
+
+function Lexer:tag_anchor_alias(indent)
+	local found = true
+	while found do
+		-- if self.iter:match("*") then
+		-- 	self:alias(indent)
+		if self.iter:match("&") then
+			self:anchor(indent)
+		elseif self.iter:match("!") then
+			self:tag(indent)
+		else
+			found = false
+		end
+		self.iter:skip_space()
 	end
 end
 
@@ -373,18 +496,37 @@ end
 function Lexer:tag(indent)
 	local tag_text = {}
 	print("start tag: " .. self.iter:peek())
-	while self.iter:peek() ~= "\n" and self.iter:peek() ~= " " do
+	assert(self.iter:peek() == "!")
+	table.insert(tag_text, self.iter:next())
+
+	if self.iter:peek() == "!" then
 		table.insert(tag_text, self.iter:next())
+		local char = self.iter:peek()
+		while char:match("%w") or char == "-" do
+			table.insert(tag_text, self.iter:next())
+			char = self.iter:peek()
+		end
+		print("shorthand tag: " .. table.concat(tag_text, ""))
+		table.insert(self.tokens, {
+			kind = "!",
+			indent = indent,
+			value = table.concat(tag_text, ""),
+		})
+		return OK
+	else
+		while self.iter:peek() ~= "\n" and self.iter:peek() ~= " " do
+			table.insert(tag_text, self.iter:next())
+		end
+		while self.iter:peek() == " " do
+			self.iter:next()
+		end
+		-- if self.iter:eol() then
+		table.insert(self.tokens, {
+			kind = "!",
+			indent = indent,
+			value = table.concat(tag_text, ""),
+		})
 	end
-	while self.iter:peek() == " " do
-		self.iter:next()
-	end
-	-- if self.iter:eol() then
-	table.insert(self.tokens, {
-		kind = "!",
-		indent = indent,
-		value = table.concat(tag_text, ""),
-	})
 	return OK
 end
 
@@ -428,20 +570,26 @@ function Lexer:flow_seq()
 	local chars = {}
 	table.insert(self.tokens, { kind = "+SEQ []" })
 	while not self.iter:eof() do
+		print("SEQ[] '" .. self.iter:peek() .. "'")
 		if self.iter:match("]") then
+			print("close")
 			if chars and #chars > 0 then
+				print("VL: " .. table.concat(chars, ""))
 				table.insert(self.tokens, { kind = "CHARS", value = trim(table.concat(chars, "")), indent = 0 })
 			end
 			table.insert(self.tokens, { kind = "-SEQ" })
 			return
 		elseif self.iter:match(",") then
+			print("sep")
 			if chars then
+				print("VL: " .. table.concat(chars, ""))
 				table.insert(self.tokens, { kind = "CHARS", value = trim(table.concat(chars, "")), indent = 0 })
 			end
 			self.iter:next()
 			self:sep()
 			chars = {}
 		elseif self.iter:match(":") then
+			print("key")
 			-- map in sequence
 			table.insert(self.tokens, { kind = "+MAP {}" })
 			table.insert(self.tokens, { kind = "CHARS", value = trim(table.concat(chars, "")), indent = 0 })
@@ -454,6 +602,9 @@ function Lexer:flow_seq()
 			table.insert(self.tokens, { kind = "CHARS", value = trim(table.concat(chars, "")), indent = 0 })
 			chars = nil
 			table.insert(self.tokens, { kind = "-MAP" })
+		elseif self:is_comment() then
+			print("# " .. self.iter.row .. ":" .. self.iter.col)
+			self:comment()
 		else
 			table.insert(chars, self.iter:next())
 		end
@@ -471,8 +622,11 @@ function Lexer:flow_map()
 			end
 			table.insert(self.tokens, { kind = "-MAP" })
 			return OK
+		elseif self.iter:match("!") then
+			print("found tag")
+			self:tag()
+			chars = {}
 		elseif self.iter:match(":") then
-			print("dash")
 			if chars then
 				table.insert(self.tokens, { kind = KEY, value = trim(table.concat(chars, "")), indent = 0 })
 			end
@@ -480,7 +634,9 @@ function Lexer:flow_map()
 			self.iter:next()
 			self:sep()
 		elseif self.iter:match(",") then
+			print("found sep")
 			if chars then
+				print("insert value")
 				table.insert(self.tokens, { kind = "CHARS", value = trim(table.concat(chars, "")), indent = 0 })
 				-- table.insert(self.tokens, { kind = "SEP", indent = 0 })
 			end
@@ -519,14 +675,17 @@ function Lexer:complex(indent)
 					if self.iter:peek() == NL then
 						local next_indent = self:next_indent()
 						self.iter:next(next_indent + 1)
+						print("complex: call block_node(" .. next_indent .. ", true)")
 						res, mes = self:block_node(next_indent, true)
 					else
+						print("complex: call block_node(" .. self:next_indent() .. ", false)")
 						res, mes = self:block_node(self:next_indent(), false)
 					end
 				else
 					print("expected complex key character ':' but found '" .. (self.iter:peek() or "") .. "'")
 					table.insert(self.tokens, { kind = "CHARS", value = "" })
 				end
+				print("<<<<<<<<<<<<<<<<")
 			end
 		elseif self.iter:peek() == NL then
 			self.iter:next()
@@ -559,11 +718,12 @@ function Lexer:map(indent)
 			table.insert(self.tokens, { kind = KEY, indent = indent, value = table.concat(key, "") })
 			self.iter:next()
 			self.iter:skip_space()
-			if self.iter:match("&") then -- TODO: this is unchecked
-				print("found anchor")
-				self:anchor(indent)
-				self.iter:skip_space()
-			end
+			self:tag_anchor_alias(indent)
+			-- if self.iter:match("&") then -- TODO: this is unchecked
+			-- 	print("found anchor")
+			-- 	self:anchor(indent)
+			-- 	self.iter:skip_space()
+			-- end
 			print("map next char: " .. self.iter:peek())
 			if self.iter:match("*") then -- TODO: this is unchecked
 				self:alias(indent)
@@ -590,6 +750,7 @@ function Lexer:map(indent)
 				table.insert(self.tokens, { kind = MAP_END, indent = indent })
 				return OK
 			else
+				print("enter block node: " .. indent .. ":" .. self:next_indent())
 				res, mes = self:block_node(indent, false)
 			end
 			if not self.iter:eof() then
@@ -605,15 +766,15 @@ function Lexer:map(indent)
 			table.insert(self.tokens, { kind = MAP_END, indent = indent })
 			return OK
 		elseif self.iter:peek() == NL then
-			print("MAP NL")
+			print("MAP NL" .. self.iter.row)
 			self.iter:next()
 			if self:indent() < indent then
 				table.insert(self.tokens, { kind = MAP_END, indent = indent })
 				print("return MAP")
 				return OK
 			elseif self:indent() > indent then
-				print("map wrong indent: " .. indent .. "->" .. self:indent() .. ", row: " .. self.iter.row)
 				local next_indent = self:indent()
+				print(self:error(string.format("Wrong indentation: should be %d but is %d", indent, next_indent)))
 				self.iter:next(next_indent)
 				return ERR, self:error(string.format("Wrong indentation: should be %d but is %d", indent, next_indent))
 			end
@@ -638,7 +799,7 @@ function Lexer:sequence(indent)
 	local res = OK
 	local mes
 	while not self.iter:eof() do
-		if self.iter:match("- ") or self.iter:match("-\n") then
+		if self.iter:match("- ") or self.iter:match("-\t") or self.iter:match("-\n") then
 			self.iter:next()
 			self.iter:skip_space()
 			print("seq after'" .. self.iter:peek() .. "'")
@@ -648,7 +809,7 @@ function Lexer:sequence(indent)
 				self:tag(indent)
 				self.iter:skip_space()
 			end
-			if self.iter:peek() == NL or self.iter:match("- ") then
+			if self.iter:peek() == NL or self.iter:match("- ") or self.iter:match("-\t") then
 				print("seq is NL")
 				local next_indent = self:next_indent()
 				if self.iter:peek() == NL then
@@ -701,10 +862,10 @@ function Lexer:sequence(indent)
 end
 
 function Lexer:block_node(indent, floating)
-	local res = OK
+	local res
 	local mes
 	self.iter:skip_space()
-	print("block node in: '" .. (self.iter:peek() or "eof") .. "'")
+	print("block node in: indent:" .. indent .. " '" .. (self.iter:peek() or "eof") .. "'")
 	if self.iter:peek() == ALIAS then
 		self.iter:next()
 		local alias = {}
@@ -734,7 +895,7 @@ function Lexer:block_node(indent, floating)
 		self.iter:next()
 	end
 	while not self.iter:eof() do
-		if self.iter:match("- ") or self.iter:match("-\n") then
+		if self.iter:match("- ") or self.iter:match("-\t") or self.iter:match("-\n") then
 			res, mes = self:sequence(indent)
 			return res, mes
 		elseif self.iter:match("[") or self.iter:match("{") then
@@ -746,7 +907,6 @@ function Lexer:block_node(indent, floating)
 			return OK
 		elseif self.iter:match(">") then
 			local next_indent = self:next_indent()
-			self.iter:next(2)
 			table.insert(
 				self.tokens,
 				{ kind = "CHARS", value = self:folded(next_indent), indent = next_indent, type = "folded" }
@@ -770,8 +930,8 @@ function Lexer:block_node(indent, floating)
 				return 2
 			end
 		else
+			print("search scalar")
 			res, mes = self:scalar(indent, floating)
-			assert(self.iter:peek() == NL)
 			return res, mes
 		end
 	end
@@ -835,7 +995,7 @@ function Lexer:stream()
 			self.iter:next()
 		elseif self.iter:match("%") then
 			res, mes = self:directive()
-		elseif self.iter:match("#") then
+		elseif self:is_comment() then
 			res, mes = self:comment()
 		else
 			table.insert(self.tokens, { kind = "+DOC", indent = 0 })
@@ -877,13 +1037,11 @@ function Lexer:parse_tag(tag_value)
 	elseif string.match(tag_value, "^!(.*)") then
 		tag_result = "<" .. (self.local_tag and self.local_tag or "!") .. string.match(tag_value, "^!(.*)") .. ">"
 	end
-	print(result or "nil")
 	return tag_result
 end
 
 function Lexer:__tostring()
 	local str = {}
-	local tags = {}
 	local anchor, tag
 	print(require("str").to_string(self.tokens))
 	for t in self:ipairs() do
@@ -903,16 +1061,26 @@ function Lexer:__tostring()
 					str,
 					string.format(
 						"=VAL %s%s%s%s",
-						(tag and (tag .. " ") or ""),
 						(anchor and ("&" .. anchor .. " ") or ""),
+						(tag and (self:parse_tag(tag) .. " ") or ""),
 						(t.type and t.type or ":"),
 						escape(self:value(t.value))
 					)
 				)
 			end
 			anchor = nil
+			tag = nil
 		elseif t.kind == KEY then
-			table.insert(str, string.format("=VAL %s%s", (t.type and t.type or ":"), trim(t.value)))
+			table.insert(
+				str,
+				string.format(
+					"=VAL %s%s%s",
+					(tag and (self:parse_tag(tag) .. " ") or ""),
+					(t.type and t.type or ":"),
+					trim(t.value)
+				)
+			)
+			tag = nil
 		elseif t.kind == ANCHOR then
 			anchor = t.value
 		elseif t.kind == ALIAS then
@@ -967,21 +1135,5 @@ function Lexer:next()
 	end
 	return self.tokens[self.index]
 end
-
-local doc = [[
---- >
- Sammy Sosa completed another
- fine season with great stats.
-
-   63 Home Runs
-   0.288 Batting Average
-
- What a year!
-]]
-
--- local iter = require("StringIterator"):new(doc)
--- local lexer, mes = Lexer:new(iter)
--- print(tostring(lexer))
--- print(tostring(mes))
 
 return Lexer
