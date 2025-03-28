@@ -458,18 +458,23 @@ end
 
 function Lexer:tag_anchor_alias(indent)
 	local found = true
+	local last_found
 	while found do
-		-- if self.iter:match("*") then
-		-- 	self:alias(indent)
-		if self.iter:match("&") then
+		if self.iter:match("*") then
+			self:alias(indent)
+			last_found = "*"
+		elseif self.iter:match("&") then
 			self:anchor(indent)
+			last_found = "&"
 		elseif self.iter:match("!") then
 			self:tag(indent)
+			last_found = "!"
 		else
 			found = false
 		end
 		self.iter:skip_space()
 	end
+	return last_found
 end
 
 function Lexer:alias(indent)
@@ -710,24 +715,30 @@ function Lexer:map(indent)
 			table.insert(self.tokens, { kind = MAP_END, indent = indent })
 			return OK
 		elseif self:is_key() then
-			local key = {}
-			while self.iter:peek() ~= ":" do
-				table.insert(key, self.iter:next())
-			end
-			print("KEY: " .. table.concat(key, ""))
-			table.insert(self.tokens, { kind = KEY, indent = indent, value = table.concat(key, "") })
-			self.iter:next()
-			self.iter:skip_space()
 			self:tag_anchor_alias(indent)
+			local key = {}
+			if self.iter:peek() == '"' or self.iter:peek() == "'" then
+				self:quoted(indent)
+				self.iter:next()
+			else
+				while self.iter:peek() ~= ":" do
+					table.insert(key, self.iter:next())
+				end
+				print("KEY: " .. table.concat(key, ""))
+				table.insert(self.tokens, { kind = KEY, indent = indent, value = table.concat(key, "") })
+				self.iter:next()
+			end
+			self.iter:skip_space()
+			-- self:tag_anchor_alias(indent)
 			-- if self.iter:match("&") then -- TODO: this is unchecked
 			-- 	print("found anchor")
 			-- 	self:anchor(indent)
 			-- 	self.iter:skip_space()
 			-- end
 			print("map next char: " .. self.iter:peek())
-			if self.iter:match("*") then -- TODO: this is unchecked
-				self:alias(indent)
-				self.iter:skip_space()
+			if self:tag_anchor_alias() == "*" then -- TODO: combine with else
+				-- self:alias(indent)
+				-- self.iter:skip_space()
 			elseif self.iter:peek() == NL then
 				self.iter:next()
 				local next_indent = self:indent()
@@ -804,7 +815,7 @@ function Lexer:sequence(indent)
 			self.iter:skip_space()
 			print("seq after'" .. self.iter:peek() .. "'")
 			-- search for tag
-			if self.iter:peek() == "!" then
+			if self.iter:peek() == "!" then -- TODO replace with function
 				print("tag")
 				self:tag(indent)
 				self.iter:skip_space()
@@ -866,30 +877,38 @@ function Lexer:block_node(indent, floating)
 	local mes
 	self.iter:skip_space()
 	print("block node in: indent:" .. indent .. " '" .. (self.iter:peek() or "eof") .. "'")
-	if self.iter:peek() == ALIAS then
-		self.iter:next()
-		local alias = {}
-		while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
-			table.insert(alias, self.iter:next())
-		end
-		table.insert(self.tokens, { kind = ALIAS, value = table.concat(alias, ""), indent = indent })
-		if self.iter:match(" #") or self.iter:match("\t#") then
-			print("comment in block node")
-			self:comment()
-		end
+	if self:tag_anchor_alias(indent) == ALIAS then
 		return OK
-	elseif self.iter:peek() == ANCHOR then
-		self.iter:next()
-		local anchor = {}
-		while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
-			table.insert(anchor, self.iter:next())
-		end
-		table.insert(self.tokens, { kind = ANCHOR, value = table.concat(anchor, ""), indent = indent })
-		self.iter:next()
-	elseif self.iter:peek() == "!" then
-		self:tag(indent)
-		self.iter:next()
 	end
+	if self.iter:peek() == NL then
+		self.iter:next()
+		self.iter:skip_space()
+	end
+	print("after tag_anchor_alias: '" .. (self.iter:peek() or "nil") .. "'")
+	-- if self.iter:peek() == ALIAS then
+	-- 	self.iter:next()
+	-- 	local alias = {}
+	-- 	while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
+	-- 		table.insert(alias, self.iter:next())
+	-- 	end
+	-- 	table.insert(self.tokens, { kind = ALIAS, value = table.concat(alias, ""), indent = indent })
+	-- 	if self.iter:match(" #") or self.iter:match("\t#") then
+	-- 		print("comment in block node")
+	-- 		self:comment()
+	-- 	end
+	-- 	return OK
+	-- elseif self.iter:peek() == ANCHOR then
+	-- 	self.iter:next()
+	-- 	local anchor = {}
+	-- 	while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
+	-- 		table.insert(anchor, self.iter:next())
+	-- 	end
+	-- 	table.insert(self.tokens, { kind = ANCHOR, value = table.concat(anchor, ""), indent = indent })
+	-- 	self.iter:next()
+	-- elseif self.iter:peek() == "!" then
+	-- 	self:tag(indent)
+	-- 	self.iter:next()
+	-- end
 	if self:is_comment() then
 		self:comment()
 		self.iter:next()
@@ -919,6 +938,7 @@ function Lexer:block_node(indent, floating)
 			res, mes = self:complex(indent)
 			return res, mes
 		elseif self.iter:peek() == "'" or self.iter:peek() == '"' then
+			print("quoted")
 			res, mes = self:quoted()
 			return res, mes
 		elseif self.iter:match("---") or self.iter:match("...") then
@@ -1062,7 +1082,7 @@ function Lexer:__tostring()
 					string.format(
 						"=VAL %s%s%s%s",
 						(anchor and ("&" .. anchor .. " ") or ""),
-						(tag and (self:parse_tag(tag) .. " ") or ""),
+						(tag and (self:parse_tag(tag.value) .. " ") or ""),
 						(t.type and t.type or ":"),
 						escape(self:value(t.value))
 					)
@@ -1074,13 +1094,22 @@ function Lexer:__tostring()
 			table.insert(
 				str,
 				string.format(
-					"=VAL %s%s%s",
-					(tag and (self:parse_tag(tag) .. " ") or ""),
+					"=VAL %s%s%s%s",
+					(anchor and ("&" .. anchor .. " ") or ""),
+					(tag and (self:parse_tag(tag.value) .. " ") or ""),
 					(t.type and t.type or ":"),
 					trim(t.value)
 				)
 			)
+			anchor = nil
 			tag = nil
+		elseif t.kind == MAP_START then
+			if tag and tag.indent < t.indent then
+				table.insert(str, string.format("%s%s", t.kind, (tag and (" " .. self:parse_tag(tag.value)) or "")))
+				tag = nil
+			else
+				table.insert(str, string.format("%s", t.kind))
+			end
 		elseif t.kind == ANCHOR then
 			anchor = t.value
 		elseif t.kind == ALIAS then
@@ -1098,7 +1127,7 @@ function Lexer:__tostring()
 				print("TAGDEF: " .. require("str").to_string(act_tag))
 			end
 		elseif t.kind == "!" then
-			tag = t.value
+			tag = t
 		else
 			table.insert(
 				str,
@@ -1106,7 +1135,7 @@ function Lexer:__tostring()
 					"%s%s%s",
 					t.kind,
 					(anchor and (" &" .. anchor) or ""),
-					(tag and (" " .. self:parse_tag(tag)) or "")
+					(tag and (" " .. self:parse_tag(tag.value)) or "")
 				)
 			)
 			tag = nil
