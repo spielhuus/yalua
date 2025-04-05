@@ -117,7 +117,7 @@ end
 ---@param pos integer? position from where the string should match
 ---@return boolean Returns true if the next characters match the given string, otherwise false.
 function StringIterator:match(str, pos)
-	local s = string.sub(self.str, self.index + 1 + (pos or 0), self.index + #str + (pos or 0))
+	local s = string.sub(self.str, self.index + (pos or 1), self.index + #str + (pos and (pos - 1) or 0))
 	return s == str
 end
 
