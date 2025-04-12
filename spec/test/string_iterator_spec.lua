@@ -218,10 +218,10 @@ key:
 			assert.is_true(iterator:match("world"))
 		end)
 
-		it("should match a word from position", function()
+		it("should match a word #from position", function()
 			local iterator = StringIterator:new("hello world")
 			assert.is_false(iterator:match("lo", 1))
-			assert.is_true(iterator:match("lo", 3))
+			assert.is_true(iterator:match("lo", 4))
 		end)
 
 		it("should return the lines", function()

@@ -1,568 +1,247 @@
 local assert = require("luassert")
-local Lexer = require("Lexer2")
-local Parser = require("Parser2")
+local Lexer = require("Lexer")
+local Parser = require("Parser")
 local StringIterator = require("StringIterator")
 
-local function load_file(file_path)
-	local file = io.open(file_path, "r")
-	if not file then
-		return nil, "File not found"
-	end
-	local content = file:read("*all")
-	file:close()
-	return content
-end
-
 describe("Test the Parser", function()
-	it("should parse a stream start #document", function()
-		local doc = [[
----
-]]
-		local iter = StringIterator:new(doc)
+	-- Helper function to reduce boilerplate
+	local function parse_yaml(yaml_string)
+		local iter = StringIterator:new(yaml_string)
 		local lexer = Lexer:new(iter)
-		assert(lexer)
+		assert(lexer, "Lexer creation failed")
+		print(tostring(lexer))
 		local parser = Parser:new(lexer)
-		-- 		TODO: correct result
-		-- 		local expect = [[
-		-- +STR
-		--  +DOC ---
-		--    =VAL :
-		--  -DOC
-		-- -STR
-		-- ]]
-		local expect = [[
-+STR
- +DOC ---
- -DOC
--STR
+		assert(parser, "Parser creation failed")
+		-- Check for parsing errors if your parser has an error state
+		-- assert.is_nil(parser.error, "Parsing generated an error: " .. tostring(parser.error))
+		return parser.result
+	end
+
+	it("should parse a simple block sequence", function()
+		local doc = [[ 
+--- 
+- item 1 
+- item 2 
+- item 3 
 ]]
-		assert.are.same(expect, tostring(parser))
+		local expect = { "item 1", "item 2", "item 3" }
+		assert.are.same(expect, parse_yaml(doc))
 	end)
 
-	it("should parse a simple value #exclude", function()
-		local doc = [[
----
-value
+	it("should parse a simple block map", function()
+		local doc = [[ 
+--- 
+key1: value 1 
+key2: value 2 
+another_key: Another Value 
 ]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
-		assert(lexer)
-		local parser = Parser:new(lexer)
-		local expect = [[
-+STR
- +DOC ---
-  =VAL :value
- -DOC
--STR
-]]
-		assert.are.same(expect, tostring(parser))
-	end)
-
-	it("should parse a mapping #true", function()
-		local doc = [[
----
-key: value
-]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
-		assert(lexer)
-		local parser = Parser:new(lexer)
-		local expect = [[
-+STR
- +DOC ---
-  +MAP
-   =VAL :key
-   =VAL :value
-  -MAP
- -DOC
--STR
-]]
-		assert.are.same(expect, tostring(parser))
-	end)
-
-	it("should parse a sequence #true", function()
-		local doc = [[
----
-- value1
-- value2
-]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
-		assert(lexer)
-		local parser = Parser:new(lexer)
-		local expect = [[
-+STR
- +DOC ---
-  +SEQ
-   =VAL :value1
-   =VAL :value2
-  -SEQ
- -DOC
--STR
-]]
-		assert.are.same(expect, tostring(parser))
-	end)
-
-	it("should parse a nested sequence #true", function()
-		local doc = [[
----
-- - value1
-  - value2
-- value 3
-]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
-		assert(lexer)
-		local parser = Parser:new(lexer)
-		local expect = [[
-+STR
- +DOC ---
-  +SEQ
-   +SEQ
-    =VAL :value1
-    =VAL :value2
-   -SEQ
-   =VAL :value 3
-  -SEQ
- -DOC
--STR
-]]
-		assert.are.same(expect, tostring(parser))
-	end)
-
-	it("should parse a node with comment #true", function()
-		local doc = [[
-	# This is a comment
-	---
-	- - value1 # another comment
-	  - value2
-	#and a comment
-	- value 3
-	key: value # comment
-	]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
 		local expect = {
-			{ kind = "+DOC" },
-			{ kind = "DASH", indent = 0 },
-			{ kind = "DASH", indent = 0 },
-			{ kind = "CHARS", value = "value1" },
-			{ kind = "DASH", indent = 2 },
-			{ kind = "CHARS", value = "value2" },
-			{ kind = "EINDENT", indent = 2 },
-			{ kind = "DASH", indent = 0 },
-			{ kind = "CHARS", value = "value 3" },
-			{ kind = "CHARS", value = "key" },
-			{ kind = "COLON", indent = 0 },
-			{ kind = "CHARS", value = "value" },
+			key1 = "value 1",
+			key2 = "value 2",
+			another_key = "Another Value",
 		}
-		assert(lexer)
-		assert.are.same(expect, lexer.tokens)
+		assert.are.same(expect, parse_yaml(doc))
 	end)
-	--
-	-- 	it("should parse spec example 2.1", function()
-	-- 		local doc = [[
-	-- - Mark McGwire
-	-- - Sammy Sosa
-	-- - Ken Griffey
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Ken Griffey" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.2", function()
-	-- 		local doc = [[
-	-- hr:  65    # Home runs
-	-- avg: 0.278 # Batting average
-	-- rbi: 147   # Runs Batted In
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "65" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "0.278" },
-	-- 			{ kind = "CHARS", value = "rbi" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "147" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.3", function()
-	-- 		local doc = [[
-	-- american:
-	-- - Boston Red Sox
-	-- - Detroit Tigers
-	-- - New York Yankees
-	-- national:
-	-- - New York Mets
-	-- - Chicago Cubs
-	-- - Atlanta Braves
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "CHARS", value = "american" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Boston Red Sox" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Detroit Tigers" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "New York Yankees" },
-	-- 			{ kind = "CHARS", value = "national" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "New York Mets" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Chicago Cubs" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Atlanta Braves" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.4", function()
-	-- 		local doc = [[
-	-- -
-	--   name: Mark McGwire
-	--   hr:   65
-	--   avg:  0.278
-	-- -
-	--   name: Sammy Sosa
-	--   hr:   63
-	--   avg:  0.288
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "name" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "65" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "0.278" },
-	-- 			{ kind = "EINDENT", indent = 2 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "name" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "63" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "0.288" },
-	-- 			{ kind = "EINDENT", indent = 2 },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.5", function()
-	-- 		local doc = [[
-	-- - [name        , hr, avg  ]
-	-- - [Mark McGwire, 65, 0.278]
-	-- - [Sammy Sosa  , 63, 0.288]
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "[" },
-	-- 			{ kind = "CHARS", value = "name" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "]" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "[" },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "CHARS", value = "65" },
-	-- 			{ kind = "CHARS", value = "0.278" },
-	-- 			{ kind = "]" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "[" },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "63" },
-	-- 			{ kind = "CHARS", value = "0.288" },
-	-- 			{ kind = "]" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.6", function()
-	-- 		local doc = [[
-	-- Mark McGwire: {hr: 65, avg: 0.278}
-	-- Sammy Sosa: {
-	--     hr: 63,
-	--     avg: 0.288,
-	--  }
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "{" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "CHARS", value = "65" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "CHARS", value = "0.278" },
-	-- 			{ kind = "}" },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "{" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "CHARS", value = "63" },
-	-- 			{ kind = "CHARS", value = "avg" },
-	-- 			{ kind = "CHARS", value = "0.288" },
-	-- 			{ kind = "}" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.7", function()
-	-- 		local doc = [[
-	-- # Ranking of 1998 home runs
-	-- ---
-	-- - Mark McGwire
-	-- - Sammy Sosa
-	-- - Ken Griffey
-	--
-	-- # Team ranking
-	-- ---
-	-- - Chicago Cubs
-	-- - St Louis Cardinals
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Ken Griffey" },
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Chicago Cubs" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "St Louis Cardinals" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.8", function()
+
+	it("should parse a nested block sequence", function()
+		local doc = [[ 
+--- 
+- item 1 
+- 
+  - nested 1 
+  - nested 2 
+- item 3 
+- 
+  - nested 3 
+  - 
+    - double nested 1 
+    - double nested 2 
+]]
+		local expect = {
+			"item 1",
+			{ "nested 1", "nested 2" },
+			"item 3",
+			{ "nested 3", { "double nested 1", "double nested 2" } },
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse a nested block map", function()
+		local doc = [[ 
+--- 
+level1_key1: value1 
+level1_key2: 
+  level2_key1: nested value 1 
+  level2_key2: nested value 2 
+level1_key3: 
+  level2_another: 
+    level3_key: deep value 
+]]
+		local expect = {
+			level1_key1 = "value1",
+			level1_key2 = {
+				level2_key1 = "nested value 1",
+				level2_key2 = "nested value 2",
+			},
+			level1_key3 = {
+				level2_another = {
+					level3_key = "deep value",
+				},
+			},
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse a sequence containing maps", function()
+		local doc = [[ 
+--- 
+- simple item 
+- key1: value1 
+  key2: value2 
+- another simple item 
+- name: Alice 
+  age: 30 
+]]
+		local expect = {
+			"simple item",
+			{ key1 = "value1", key2 = "value2" },
+			"another simple item",
+			{ name = "Alice", age = 30 }, -- Assuming your parser handles numbers
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse a map containing sequences", function()
+		local doc = [[ 
+--- 
+config_name: main 
+items: 
+  - item 1 
+  - item 2 
+  - item 3 
+users: 
+  - user A 
+  - user B 
+enabled: true # Assuming your parser handles booleans 
+]]
+		local expect = {
+			config_name = "main",
+			items = { "item 1", "item 2", "item 3" },
+			users = { "user A", "user B" },
+			enabled = true,
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse a flow sequence", function()
+		local doc = [[ 
+--- 
+[flow item 1, flow item 2, flow item 3]
+]]
+		local expect = { "flow item 1", "flow item 2", "flow item 3" }
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse a flow map", function()
+		local doc = [[ 
+--- 
+{ key1: val1, key2: val2, number: 123 }
+]]
+		local expect = { key1 = "val1", key2 = "val2", number = 123 }
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse mixed flow and block styles (map with flow sequence)", function()
+		local doc = [[ 
+--- 
+options: [opt1, opt2, opt3] 
+settings: 
+  mode: active 
+]]
+		local expect = {
+			options = { "opt1", "opt2", "opt3" },
+			settings = { mode = "active" },
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse mixed flow and block styles (sequence with flow map)", function()
+		local doc = [[ 
+--- 
+- { name: itemA, value: 10 }
+- name: itemB # Block map element
+  value: 20
+- { name: itemC, value: 30, tags: [tag1, tag2] } # Flow map with flow sequence
+]]
+		local expect = {
+			{ name = "itemA", value = 10 },
+			{ name = "itemB", value = 20 },
+			{ name = "itemC", value = 30, tags = { "tag1", "tag2" } },
+		}
+		assert.are.same(expect, parse_yaml(doc))
+	end)
+
+	it("should parse an empty block sequence", function()
+		-- An empty sequence in block style might be represented in different ways.
+		-- Option 1: Explicit empty sequence node (less common standalone)
+		-- Option 2: A key with no sequence items below it (effectively null or empty)
+		-- Let's test a key mapping to an explicitly empty flow sequence
+		local doc = [[ 
+--- 
+empty_list: [] 
+]]
+		local expect = { empty_list = {} }
+		assert.are.same(expect, parse_yaml(doc))
+		-- Alternative: Empty flow sequence as the root document
+		local doc2 = [[ 
+--- 
+[] 
+]]
+		local expect2 = {}
+		assert.are.same(expect2, parse_yaml(doc2))
+	end)
+
+	it("should parse an empty block map", function()
+		-- Similar ambiguity as empty sequence for block style.
+		-- Let's test a key mapping to an explicitly empty flow map
+		local doc = [[ 
+--- 
+empty_map: {} 
+]]
+		local expect = { empty_map = {} }
+		assert.are.same(expect, parse_yaml(doc))
+		-- Alternative: Empty flow map as the root document
+		local doc2 = [[ 
+--- 
+{} 
+]]
+		local expect2 = {}
+		assert.are.same(expect2, parse_yaml(doc2))
+	end)
+
+	-- 	it("should parse #map with various scalar types", function()
 	-- 		local doc = [[
 	-- ---
-	-- time: 20:03:20
-	-- player: Sammy Sosa
-	-- action: strike (miss)
-	-- ...
-	-- ---
-	-- time: 20:03:47
-	-- player: Sammy Sosa
-	-- action: grand slam
-	-- ...
+	-- a_string: Hello World
+	-- an_integer: 12345
+	-- a_float: 3.14159
+	-- a_boolean_true: true
+	-- a_boolean_false: false
+	-- a_null: null # Note: Lua 'nil' might be the target representation
 	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
 	-- 		local expect = {
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "CHARS", value = "time" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "20:03:20" },
-	-- 			{ kind = "CHARS", value = "player" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "action" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "strike (miss)" },
-	-- 			{ kind = "-DOC" },
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "CHARS", value = "time" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "20:03:47" },
-	-- 			{ kind = "CHARS", value = "player" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "action" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "grand slam" },
-	-- 			{ kind = "-DOC" },
+	-- 			a_string = "Hello World",
+	-- 			an_integer = 12345,
+	-- 			a_float = 3.14159,
+	-- 			a_boolean_true = true,
+	-- 			a_boolean_false = false,
+	-- 			a_null = nil, -- Or a specific null sentinel if your parser uses one
+	-- 			-- e.g., cjson.null, ngx.null, or a custom object.
+	-- 			-- 'nil' means the key might not exist in the resulting table.
+	-- 			-- If 'a_null' should exist with a null value, use the appropriate sentinel.
 	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.9", function()
-	-- 		local doc = [[
-	-- ---
-	-- hr: # 1998 hr ranking
-	-- - Mark McGwire
-	-- - Sammy Sosa
-	-- # 1998 rbi ranking
-	-- rbi:
-	-- - Sammy Sosa
-	-- - Ken Griffey
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "rbi" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Ken Griffey" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.10", function()
-	-- 		local doc = [[
-	-- ---
-	-- hr:
-	-- - Mark McGwire
-	-- # Following node labeled SS
-	-- - &SS Sammy Sosa
-	-- rbi:
-	-- - *SS # Subsequent occurrence
-	-- - Ken Griffey
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "CHARS", value = "hr" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Mark McGwire" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "&", indent = 0, value = "SS" },
-	-- 			{ kind = "CHARS", value = "Sammy Sosa" },
-	-- 			{ kind = "CHARS", value = "rbi" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "*", indent = 0, value = "SS" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Ken Griffey" },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec #example 2.11 #exclude", function()
-	-- 		local doc = [[
-	-- ? - Detroit Tigers
-	--   - Chicago cubs
-	-- : - 2001-07-23
-	--
-	-- ? [ New York Yankees,
-	--     Atlanta Braves ]
-	-- : [ 2001-07-02, 2001-08-12,
-	--     2001-08-14 ]
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "?", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Detroit Tigers" },
-	-- 			{ kind = "DASH", indent = 2 },
-	-- 			{ kind = "CHARS", value = "Chicago cubs" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "2001-07-23" },
-	-- 			{ kind = "?", indent = 0 },
-	-- 			{ kind = "[", indent = 0 },
-	-- 			{ kind = "CHARS", value = "New York Yankees" },
-	-- 			{ kind = "CHARS", value = "Atlanta Braves" },
-	-- 			{ kind = "]", indent = 0 },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "[", indent = 0 },
-	-- 			{ kind = "CHARS", value = "2001-07-02" },
-	-- 			{ kind = "CHARS", value = "2001-08-12" },
-	-- 			{ kind = "CHARS", value = "2001-07-14" },
-	-- 			{ kind = "]", indent = 0 },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
-	-- 	end)
-	--
-	-- 	it("should parse spec example 2.12", function()
-	-- 		local doc = [[
-	-- ---
-	-- # Products purchased
-	-- - item    : Super Hoop
-	--   quantity: 1
-	-- - item    : Basketball
-	--   quantity: 4
-	-- - item    : Big Shoes
-	--   quantity: 1
-	-- ]]
-	-- 		local iter = StringIterator:new(doc)
-	-- 		local lexer = Lexer:new(iter)
-	-- 		local expect = {
-	-- 			{ kind = "+DOC" },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "item" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Super Hoop" },
-	-- 			{ kind = "CHARS", value = "quantity" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "1" },
-	-- 			{ kind = "EINDENT", indent = 2 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "item" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Basketball" },
-	-- 			{ kind = "CHARS", value = "quantity" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "4" },
-	-- 			{ kind = "EINDENT", indent = 2 },
-	-- 			{ kind = "DASH", indent = 0 },
-	-- 			{ kind = "CHARS", value = "item" },
-	-- 			{ kind = "COLON", indent = 0 },
-	-- 			{ kind = "CHARS", value = "Big Shoes" },
-	-- 			{ kind = "CHARS", value = "quantity" },
-	-- 			{ kind = "COLON", indent = 2 },
-	-- 			{ kind = "CHARS", value = "1" },
-	-- 			{ kind = "EINDENT", indent = 2 },
-	-- 		}
-	-- 		assert(lexer)
-	-- 		assert.are.same(expect, lexer.tokens)
+	-- 		-- Use are.equivalent for tables containing nil if 'nil' means key absence
+	-- 		-- Use are.same if 'a_null' should exist and map to a specific null sentinel object
+	-- 		assert.are.same(expect, parse_yaml(doc))
 	-- 	end)
 end)

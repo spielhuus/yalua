@@ -12,6 +12,7 @@ describe("Test if the Lexer lexes", function()
 		local expect = [[
 +STR
 +DOC ---
+=VAL :
 -DOC
 -STR
 ]]
@@ -50,6 +51,60 @@ key: value
 +MAP
 =VAL :key
 =VAL :value
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a mapping key, with spaces", function()
+		local doc = [[
+"implicit block key" : [
+  "implicit flow key" : value,
+ ]
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL "implicit block key
++SEQ []
++MAP {}
+=VAL "implicit flow key
+=VAL :value
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a mapping #key", function()
+		local doc = [[
+"implicit block key": [
+  "implicit flow key" : value,
+ ]
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL "implicit block key
++SEQ []
++MAP {}
+=VAL "implicit flow key
+=VAL :value
+-MAP
+-SEQ
 -MAP
 -DOC
 -STR
@@ -136,7 +191,7 @@ key: value
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a node with #multiline scalar", function()
+	it("should lex a node with multiline scalar", function()
 		-- TODO invalid Yaml
 		local doc = [[
 # This is a comment
@@ -168,7 +223,7 @@ key:
 ---
 - - value1 # another comment
   - value2
-#and a comment
+# and a comment
 - value 3
 ]]
 		local iter = StringIterator:new(doc)
@@ -253,12 +308,12 @@ mom: happy
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a map with empty characters and #tabs", function()
+	it("should lex a map with empty characters and tabs", function()
 		local doc = [[
 
-a: b	
-seq:	
- - a	
+a: b
+seq:
+ - a
 c: d	#X
 ]]
 		local iter = StringIterator:new(doc)
@@ -283,7 +338,7 @@ c: d	#X
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a seq and map on the same #line", function()
+	it("should lex a seq and map on the same line", function()
 		local doc = [[
 # This is a comment
 ---
@@ -358,7 +413,7 @@ key:
 		assert.are.same("ERROR:4:2 Wrong indentation: should be 0 but is 2\n  - wrong\n  ^", mes)
 	end)
 
-	it("should parse the Wrong indendation in mapping", function()
+	it("should parse the Wrong indendation in mapping error", function()
 		local doc = [[
 k1: v1
  k2: v2
@@ -366,7 +421,7 @@ k1: v1
 		local iter = StringIterator:new(doc)
 		local lexer, mes = Lexer:new(iter)
 		assert.is_nil(lexer)
-		assert.are.same("ERROR:2:1 Wrong indentation: should be 0 but is 1\n k2: v2\n ^", mes)
+		assert.are.same("ERROR:2:1 invalid multiline plain key\n k2: v2\n ^", mes)
 	end)
 
 	it("should lex a document with a directive", function()
@@ -416,7 +471,7 @@ k1: v1
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a document with multiline #comments", function()
+	it("should lex a document with multiline comments", function()
 		local doc = [[
 %TAG ! tag:clarkevans.com,2002:
 --- !shape
@@ -434,6 +489,53 @@ k1: v1
 +MAP <tag:clarkevans.com,2002:circle>
 =VAL :diameter
 =VAL :120
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a document with multiline comments", function()
+		local doc = [[
+  # Use the ! handle for presenting
+
+
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a sequence with map on new #line", function()
+		local doc = [[
+ - key: value
+   key2: value2
+ - 
+   key3: value3
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++SEQ
++MAP
+=VAL :key
+=VAL :value
+=VAL :key2
+=VAL :value2
+-MAP
++MAP
+=VAL :key3
+=VAL :value3
 -MAP
 -SEQ
 -DOC

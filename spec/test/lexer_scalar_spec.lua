@@ -3,7 +3,7 @@ local Lexer = require("Lexer")
 local StringIterator = require("StringIterator")
 
 describe("Test the scalar types", function()
-	it("should lex empty key in map", function()
+	it("should #lex empty key in map", function()
 		local doc = [[
 strip: |-
   text
@@ -55,6 +55,54 @@ block: |
 =VAL :block
 =VAL |text\n \tlines\n
 -MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex literal with yaml content", function()
+		local doc = [[
+plain: |
+  plain: |x
+    content
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :plain
+=VAL |plain: |x\n  content\n
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex literal with yaml content and #special characters", function()
+		local doc = [[
+- yaml: |
+    --- |1-∎
+  another: value
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++SEQ
++MAP
+=VAL :yaml
+=VAL |--- |1-∎\n
+=VAL another
+=VAL value
+-MAP
+-SEQ
 -DOC
 -STR
 ]]

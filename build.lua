@@ -25,6 +25,16 @@ local function dir_exists(path)
 	end
 end
 
+function get_file_content(path)
+	local file = io.open(path, "r")
+	if not file then
+		return nil, "can not open file " .. path
+	end
+	local content = file:read("*all")
+	file:close()
+	return content
+end
+
 ---write a table with text lines to a file
 ---@param path string the output file path
 ---@param data table[string]
@@ -89,7 +99,7 @@ local function spec_tree(data)
 			print(require("str").to_string(test))
 			name = test["name"]
 			tags = prefix_hash(test["tags"] or tags)
-			filename = test["file"]
+			local filename = test["file"]
 			file = test["file"]
 			the_yaml = test["yaml"]
 			if #testfile > 1 then
@@ -137,7 +147,9 @@ local function prepare_suite()
 	-- read all the test files
 	local data = {}
 	for _, file in ipairs(get_files_in_directory(string.format("%s/src", PATH_SUITE))) do
-		local test, mes = yalua.parse(string.format("%s/src/%s", PATH_SUITE, file))
+		local filename = string.format("%s/src/%s", PATH_SUITE, file)
+		print("Process file: " .. filename)
+		local test, mes = yalua.parse(filename)
 		if not test then
 			error("[ERROR] Can not load thestfile: " .. file .. " " .. mes)
 		end
@@ -157,8 +169,14 @@ local function clean()
 end
 
 local function test()
-	if os.execute("busted spec/new --exclude-tags='exclude'") ~= 0 then
+	if os.execute("busted spec/test") ~= 0 then
 		error("test suite did not run successfully")
+	end
+end
+
+local function check()
+	if os.execute("luacheck StringIterator.lua Lexer.lua Parser.lua") ~= 0 then
+		error("luacheck did not run successfully")
 	end
 end
 
@@ -179,10 +197,23 @@ if is_main(arg, ...) then
 	print("yalua build: " .. table.concat(arg, ", "))
 	if arg[1] == "test" then
 		return test()
+	elseif arg[1] == "check" then
+		check()
 	elseif arg[1] == "suite" then
 		suite()
 	elseif arg[1] == "clean" then
 		clean()
+	elseif arg[1] == "dump" then
+		if not arg[2] then
+			error("no filename for dump.")
+		end
+		local iter = require("StringIterator"):new(get_file_content(arg[2]))
+		local lexer, mes = require("Lexer"):new(iter)
+		if not lexer then
+			print(mes)
+		else
+			print(tostring(lexer))
+		end
 	end
 else
 	error("build.lua can not be used as library")

@@ -48,6 +48,9 @@ local ERR = 1
 
 ---escape the backslashes
 local function escape(str)
+	if type(str) == "number" then
+		return str
+	end
 	return (str:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\b", "\\b"):gsub("\t", "\\t"))
 end
 
@@ -283,7 +286,6 @@ end
 ---skips all white spaces until a comment is found
 ---@return boolean
 function Lexer:is_comment(seek)
-	print("check comment: " .. (self.iter:peek() or "eol"))
 	if self.iter:peek() == "#" then
 		return true
 	end
@@ -372,9 +374,9 @@ end
 function Lexer:block_indent(indent, hint, floating)
 	print(
 		"block_indent:"
-			.. indent
+			.. (indent or "nil")
 			.. ", floating: "
-			.. tostring(floating)
+			.. tostring(floating or "nil")
 			.. ", hint: "
 			.. (hint or "nil")
 			.. " '"
@@ -608,7 +610,7 @@ function Lexer:folded_attrs()
 		elseif self:is_comment() then
 			self:comment()
 		else
-			return nil, self:error("Unknown literal attribute")
+			return nil, self:error("Unknown literal attribute: '" .. self.iter:peek() .. "'")
 		end
 	end
 	assert(self.iter:peek() == NL)
@@ -687,14 +689,14 @@ function Lexer:folded(indent)
 	return result
 end
 
-function Lexer:literal(indent)
+function Lexer:literal(indent, floating)
 	assert(self.iter:peek() == "|")
 	self.iter:next()
 	local chopped, hint = self:folded_attrs()
 	if chopped == nil then
 		return ERR, hint
 	end
-	local lines, mes = self:block_indent(indent, hint, false)
+	local lines, mes = self:block_indent(indent, hint, floating)
 	if not lines then
 		return ERR, mes
 	end
@@ -1042,6 +1044,9 @@ function Lexer:flow_map(indent)
 	error("unreachable")
 end
 
+---@param indent integer
+---@return integer
+---@return string|nil
 function Lexer:complex(indent)
 	self:push(MAP_START, indent, nil)
 	local res = OK
@@ -1246,7 +1251,8 @@ function Lexer:sequence(indent)
 				print("seq: found key")
 				-- handle mapping on the same line
 				if self:next_indent() > indent then
-					res, mes = self:block_node(self:next_indent(), false)
+					print("call map with next indent")
+					res, mes = self:block_node(self:next_indent(), true)
 				else
 					res, mes = self:block_node(indent, false)
 				end
@@ -1269,7 +1275,16 @@ function Lexer:sequence(indent)
 				self:push(SEQ_END, indent, nil)
 				return OK
 			elseif next_indent > indent then
-				error("bigger indent not implemented: " .. self.iter.row .. ":" .. self.iter.col)
+				error(
+					"bigger indent not implemented: "
+						.. indent
+						.. "-"
+						.. next_indent
+						.. " "
+						.. self.iter.row
+						.. ":"
+						.. self.iter.col
+				)
 			end
 			self.iter:next(next_indent + 1)
 		else
@@ -1284,6 +1299,9 @@ function Lexer:sequence(indent)
 	self:push(SEQ_END, indent, nil)
 end
 
+---@param indent integer
+---@return integer
+---@return string|nil
 function Lexer:block_node(indent, floating)
 	local res
 	local mes
@@ -1314,7 +1332,7 @@ function Lexer:block_node(indent, floating)
 			end
 		elseif self.iter:match("|") then
 			local next_indent = self:next_indent()
-			local literal, message = self:literal(indent)
+			local literal, message = self:literal(indent, next_indent == indent)
 			if literal == ERR then
 				return literal, message
 			end
@@ -1624,6 +1642,20 @@ function Lexer:next()
 		return nil
 	end
 	return self.tokens[self.index]
+end
+
+function Lexer:match(kind)
+	if self.index + 1 > #self.tokens then
+		return nil
+	end
+	return string.sub(self.tokens[self.index + 1].kind, 1, #kind) == kind
+end
+
+function Lexer:peek()
+	if self.index + 1 > #self.tokens then
+		return nil
+	end
+	return self.tokens[self.index + 1]
 end
 
 return Lexer
