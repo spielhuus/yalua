@@ -4,13 +4,12 @@
 
 local yalua = require("yalua")
 
-PATH_SUITE = "yaml-test-suite"
-TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
-PATH_TESTS = "spec/suite"
-PATH_TREE = ".luarocks"
-COVERAGE_HTML = "coverage"
-
-CMD_LUAROCKS = "CMAKE_POLICY_VERSION_MINIMUM=3.5 luarocks --tree " .. PATH_TREE .. " --lua-version 5.1 "
+local PATH_SUITE = "yaml-test-suite"
+local TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
+local PATH_TESTS = "spec/suite"
+local PATH_TREE = ".luarocks"
+local COVERAGE_HTML = "coverage"
+local CMD_LUAROCKS = "CMAKE_POLICY_VERSION_MINIMUM=3.5 luarocks --tree " .. PATH_TREE .. " --lua-version 5.1 "
 
 local function get_files_in_directory(directory)
 	local files = {}

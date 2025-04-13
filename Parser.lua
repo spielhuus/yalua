@@ -86,7 +86,7 @@ function Parser:doc()
 			res = self:map()
 		else
 			local node = self.lexer:next()
-			-- print("++ " .. node.kind .. "='" .. node.value .. "'")
+			print("++ " .. node.kind .. "='" .. node.value .. "'")
 		end
 	end
 end
