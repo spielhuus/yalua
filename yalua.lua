@@ -96,7 +96,7 @@ local Parser = require("Parser")
 
 return {
 	stream = function(str)
-		print("'" .. str .. "'")
+		-- print("'" .. str .. "'")
 		local iter = StringIterator:new(str)
 		local lexer, mes = Lexer:new(iter)
 		if not lexer then

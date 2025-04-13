@@ -5,6 +5,8 @@ local ltrim = require("str").ltrim
 
 local Lexer = {}
 
+local function print(...) end
+
 -- According to YAML 1.2 Specification, Section 5.7 Escape Characters
 -- These are the characters that can follow a backslash `\` within
 -- double-quoted scalars to form a valid escape sequence.
@@ -95,7 +97,6 @@ function Lexer:error(mess)
 	assert(mess)
 	assert(self.iter.row)
 	assert(self.iter.col)
-	print(mess)
 	return "ERROR:"
 		.. self.iter.row
 		.. ":"

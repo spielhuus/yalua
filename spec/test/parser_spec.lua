@@ -9,7 +9,6 @@ describe("Test the Parser", function()
 		local iter = StringIterator:new(yaml_string)
 		local lexer = Lexer:new(iter)
 		assert(lexer, "Lexer creation failed")
-		print(tostring(lexer))
 		local parser = Parser:new(lexer)
 		assert(parser, "Parser creation failed")
 		-- Check for parsing errors if your parser has an error state

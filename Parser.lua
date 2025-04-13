@@ -12,9 +12,7 @@ function Parser:new(lexer)
 	if res == -1 then
 		return res, mes
 	end
-	print("== " .. to_string(res))
 	o.result = res
-
 	return o
 end
 
@@ -96,8 +94,6 @@ function Parser:doc()
 end
 
 function Parser:parse()
-	print("----------")
-	print(to_string(self.lexer:peek()))
 	local res = {}
 	while self.lexer:peek() do
 		if self.lexer:match("+STR") then

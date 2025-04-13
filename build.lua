@@ -6,6 +6,7 @@ local yalua = require("yalua")
 
 PATH_SUITE = "yaml-test-suite"
 TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
+PATH_TESTS = "spec/suite"
 
 local function get_files_in_directory(directory)
 	local files = {}
@@ -76,6 +77,11 @@ local function remove_extension(file)
 end
 
 local function spec_tree(data)
+	local total_tests, total_fails, total_skip = 0, 0, 0
+	if not dir_exists(PATH_TESTS) then
+		print("[RUN] mkdir " .. PATH_TESTS)
+		os.execute("mkdir " .. PATH_TESTS)
+	end
 	local result = {}
 	table.insert(result, 'local assert = require("luassert")')
 	table.insert(result, 'local yalua = require("yalua")')
@@ -91,7 +97,6 @@ local function spec_tree(data)
 	table.insert(result, "    return content")
 	table.insert(result, "  end")
 	for i, testfile in ipairs(data) do
-		print("TEST: " .. i .. " " .. require("str").to_string(testfile))
 		local test_nr = 0
 		local name, the_yaml, tags
 		local filename = testfile["file"]
@@ -126,26 +131,38 @@ local function spec_tree(data)
 						tags
 					)
 				)
-				table.insert(
-					result,
-					string.format('    print("### should parse the %s, file: %s")', escape(name), file)
-				)
+				-- table.insert(
+				-- 	result,
+				-- 	string.format('    print("### should parse the %s, file: %s")', escape(name), file)
+				-- )
 				table.insert(result, string.format('    local input = load_file("%s")', file))
 				if fail then
 					table.insert(result, string.format("    local result = yalua.stream(input)"))
 					table.insert(result, string.format("    assert.Equal(nil, result)"))
+					total_fails = total_fails + 1
 				else
 					table.insert(result, string.format('    local tree = load_file("%s")', event))
 					table.insert(result, string.format("    local result = yalua.stream(input)"))
 					table.insert(result, string.format("    assert.is.Same(tree, result)"))
+					total_tests = total_tests + 1
 				end
 				table.insert(result, "  end)")
+			else
+				total_skip = total_skip + 1
 			end
 			test_nr = test_nr + 1
 		end
 	end
 	table.insert(result, "end)")
-	write("spec/suite/tree_spec.lua", result)
+	write(PATH_TESTS .. "/tree_spec.lua", result)
+	print(
+		"[INFO] Tests generated: Positive: "
+			.. total_tests
+			.. ", Negative: "
+			.. total_fails
+			.. ", Skipped: "
+			.. total_skip
+	)
 end
 
 local function prepare_suite()
@@ -159,9 +176,8 @@ local function prepare_suite()
 		local filename = string.format("%s/src/%s", PATH_SUITE, file)
 		local test, mes = yalua.parse(filename)
 		if not test then
-			error("[ERROR] Can not load thestfile: " .. file .. " " .. mes)
+			error("[ERROR] Can not load the testfile: " .. file .. " " .. mes)
 		end
-		print(string.format("Parse: %s: %s", file, test[1].name))
 		assert(file)
 		test["file"] = file
 		table.insert(data, test)
@@ -170,23 +186,29 @@ local function prepare_suite()
 end
 
 local function suite()
+	print("[INFO] Prepare test suite.")
 	prepare_suite()
+	if os.execute('busted spec/suite/tree_spec.lua --exclude-tags="SM9W,2G84"') ~= 0 then
+		error("Test suite did not run successfully")
+	end
 end
 
 local function clean()
+	print("[RUN] rm -rf " .. PATH_SUITE)
 	os.execute("rm -rf " .. PATH_SUITE)
-	os.execute("rm -rf spec/suite")
+	print("[RUN] rm -rf " .. PATH_TESTS)
+	os.execute("rm -rf " .. PATH_TESTS)
 end
 
 local function test()
 	if os.execute("busted spec/test") ~= 0 then
-		error("test suite did not run successfully")
+		error("Tests did not run successfully")
 	end
 end
 
 local function check()
 	if os.execute("luacheck StringIterator.lua Lexer.lua Parser.lua yalua.lua") ~= 0 then
-		error("luacheck did not run successfully")
+		error("Luacheck did not run successfully")
 	end
 end
 
@@ -203,8 +225,18 @@ local function is_main(_arg, ...)
 	return false
 end
 
+local function print_usage()
+	print("Usage: ./build.lua <command>")
+	print("Commands:")
+	print("  test   - Run unit tests")
+	print("  check  - Run luacheck")
+	print("  suite  - Run YAML test suite")
+	print("  clean  - Clean test suite and build files")
+	print("  dump <filename> - Dump lexer output for a file")
+end
+
 if is_main(arg, ...) then
-	print("yalua build: " .. table.concat(arg, ", "))
+	-- print("yalua build: " .. table.concat(arg, ", "))
 	if arg[1] == "test" then
 		return test()
 	elseif arg[1] == "check" then
@@ -216,6 +248,7 @@ if is_main(arg, ...) then
 	elseif arg[1] == "dump" then
 		if not arg[2] then
 			error("no filename for dump.")
+			print_usage()
 		end
 		local iter = require("StringIterator"):new(get_file_content(arg[2]))
 		local lexer, mes = require("Lexer"):new(iter)
@@ -224,6 +257,8 @@ if is_main(arg, ...) then
 		else
 			print(tostring(lexer))
 		end
+	else
+		print_usage()
 	end
 else
 	error("build.lua can not be used as library")
