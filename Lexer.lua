@@ -824,7 +824,7 @@ function Lexer:tag(indent)
 	return OK
 end
 
-function Lexer:flow()
+function Lexer:flow(indent)
 	local level = 0
 	local res, mes = OK, nil
 	while not self.iter:eof() do
@@ -833,7 +833,7 @@ function Lexer:flow()
 			self.iter:next()
 			self:sep()
 			level = level + 1
-			res, mes = self:flow_map(0)
+			res, mes = self:flow_map(indent)
 		elseif self.iter:match("}") then
 			self.iter:next()
 			level = level - 1
@@ -981,6 +981,7 @@ end
 ---@return integer
 ---@return string|nil
 function Lexer:flow_map(indent)
+	print("+MAP {} " .. indent)
 	local chars = nil
 	local char_type = nil
 	self:push("+MAP {}", indent, nil)
@@ -993,10 +994,17 @@ function Lexer:flow_map(indent)
 			self:push("-MAP", indent, nil)
 			return OK
 		elseif self.iter:match("!") then
-			print("found tag")
 			self:tag()
 			chars = {}
-		elseif self.iter:match(":") then
+		elseif self.iter:match(":,") then
+			if chars then
+				self:push(KEY, indent, table.concat(chars, ""))
+				self:push(CHARS, indent, "")
+			end
+			chars = nil
+			self.iter:next(2)
+			self:sep()
+		elseif self.iter:match(": ") or self.iter:match(":\n") then
 			if chars then
 				self:push(KEY, indent, trim(table.concat(chars, "")), char_type)
 				char_type = nil
@@ -1008,7 +1016,7 @@ function Lexer:flow_map(indent)
 			if self.iter:peek() == "," or self.iter:peek() == "}" then
 				self:push(CHARS, indent, "")
 			end
-			-- search if it contains another key
+			-- search if it contains another key, means missing comma
 			local index = 1
 			while self.iter:peek(index) and self.iter:peek(index) ~= "," and self.iter:peek(index) ~= "}" do
 				if self.iter:match(": ", index) then
@@ -1019,9 +1027,15 @@ function Lexer:flow_map(indent)
 		elseif self.iter:match(",") then
 			print("found sep")
 			if chars then
-				print("insert value")
-				self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
-				char_type = nil
+				if self.tokens[#self.tokens].kind == KEY then
+					print("insert value")
+					self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
+					char_type = nil
+				else
+					self:push(KEY, indent, trim(table.concat(chars, "")), char_type)
+					self:push(CHARS, indent, "")
+					char_type = nil
+				end
 			end
 			chars = nil
 			self.iter:next()
@@ -1045,6 +1059,10 @@ function Lexer:flow_map(indent)
 			if self.iter:peek() == NL then
 				table.insert(chars, " ")
 				self.iter:next()
+				-- TODO: how can i handle this shit
+				-- if self:indent() <= indent then
+				-- 	return ERR, self:error("Wrong indentation in flow map")
+				-- end
 			else
 				table.insert(chars, self.iter:next())
 			end
@@ -1125,7 +1143,7 @@ function Lexer:map(indent)
 			self:tag_anchor_alias(indent)
 			local key = {}
 			if self.iter:peek() == "[" or self.iter:peek() == "{" then
-				self:flow()
+				self:flow(indent)
 			elseif self.iter:peek() == '"' or self.iter:peek() == "'" then
 				local quote_type = self.iter:peek()
 				key = self:quoted()
@@ -1336,7 +1354,7 @@ function Lexer:block_node(indent, floating)
 			if self:flow_is_key() then
 				self:map(indent)
 			else
-				res, mes = self:flow()
+				res, mes = self:flow(indent)
 				return res, mes
 			end
 		elseif self.iter:match("|") then

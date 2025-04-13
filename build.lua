@@ -100,7 +100,7 @@ local function spec_tree(data)
 	table.insert(result, "    file:close()")
 	table.insert(result, "    return content")
 	table.insert(result, "  end")
-	for i, testfile in ipairs(data) do
+	for _, testfile in ipairs(data) do
 		local test_nr = 0
 		local name, the_yaml, tags
 		local filename = testfile["file"]
@@ -129,8 +129,9 @@ local function spec_tree(data)
 				table.insert(
 					result,
 					string.format(
-						'  it("should parse the %s, file: #%s tags: %s", function()',
+						'  it("should parse the %s, file: <%s> tags: #%s %s", function()',
 						escape(name),
+						file,
 						remove_extension(filename),
 						tags
 					)
@@ -225,10 +226,10 @@ local function clean()
 	os.execute("rm -rf " .. PATH_TREE)
 	print("[RUN] rm -rf " .. COVERAGE_HTML)
 	os.execute("rm -rf " .. COVERAGE_HTML)
-	print("[RUN] rm  luacov.stats.out")
-	os.execute("rm luacov.stats.out")
-	print("[RUN] rm  luacov.report.out")
-	os.execute("rm luacov.report.out")
+	print("[RUN] rm -f luacov.stats.out")
+	os.execute("rm -f luacov.stats.out")
+	print("[RUN] rm -f luacov.report.out")
+	os.execute("rm -f luacov.report.out")
 end
 
 local function test()
