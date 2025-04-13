@@ -989,8 +989,8 @@ function Lexer:flow_map(indent)
 		if self.iter:match("}") then
 			if chars and #trim(table.concat(chars, "")) > 0 then
 				self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
-				char_type = nil
 			end
+			char_type = nil
 			self:push("-MAP", indent, nil)
 			return OK
 		elseif self.iter:match("!") then

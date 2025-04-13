@@ -1,6 +1,3 @@
-local to_string = require("str").to_string
-local trim = require("str").trim
-
 local Parser = {}
 
 function Parser:new(lexer)
