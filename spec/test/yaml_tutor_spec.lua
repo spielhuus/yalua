@@ -3,7 +3,7 @@ local yaml = require("yalua")
 
 -- tutorial at: https://spacelift.io/blog/yaml
 describe("Test the YAML parser with the YAML tutorial", function()
-	it("should parse simple example", function()
+	it("should parse #simple example", function()
 		local Example1 = [[---
 # key: value [mapping]
 company: spacelift
@@ -25,7 +25,8 @@ tutorial:
       type: good #string [literal]
       born: 1996 #number [literal]
 author: omkarbirade
-published: true]]
+published: true
+]]
 		local expected = {
 			company = "spacelift",
 			domain = { "devops", "devsecops" },

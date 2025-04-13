@@ -5,7 +5,7 @@ local ltrim = require("str").ltrim
 
 local Lexer = {}
 
-local function print(...) end
+-- local function print(...) end
 
 -- According to YAML 1.2 Specification, Section 5.7 Escape Characters
 -- These are the characters that can follow a backslash `\` within
@@ -124,12 +124,12 @@ end
 ---@return integer number of spaces
 function Lexer:next_indent()
 	local i = 1
-	while self.iter:peek(i) ~= "\n" do
+	while self.iter:peek(i) and self.iter:peek(i) ~= "\n" do
 		i = i + 1
 	end
 	i = i + 1
 	local j = 0
-	while self.iter:peek(i) == " " do
+	while self.iter:peek(i) and self.iter:peek(i) == " " do
 		i = i + 1
 		j = j + 1
 	end
@@ -1008,6 +1008,14 @@ function Lexer:flow_map(indent)
 			if self.iter:peek() == "," or self.iter:peek() == "}" then
 				self:push(CHARS, indent, "")
 			end
+			-- search if it contains another key
+			local index = 1
+			while self.iter:peek(index) and self.iter:peek(index) ~= "," and self.iter:peek(index) ~= "}" do
+				if self.iter:match(": ", index) then
+					return ERR, self:error("missing comma in flow mapping")
+				end
+				index = index + 1
+			end
 		elseif self.iter:match(",") then
 			print("found sep")
 			if chars then
@@ -1057,7 +1065,7 @@ function Lexer:complex(indent)
 		if self.iter:match("? ") then
 			self.iter:next(2)
 			res, mes = self:block_node(self:next_indent())
-			print("after complex key: " .. self.iter:peek())
+			print("after complex key: " .. (self.iter:peek() or "eof"))
 			if self.iter:peek() == NL then
 				self.iter:next()
 				print("after next: '" .. (self.iter:peek() or "") .. "', indent: " .. self:indent())

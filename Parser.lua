@@ -88,7 +88,8 @@ function Parser:doc()
 		elseif self.lexer:match("+MAP") then
 			res = self:map()
 		else
-			print("++ " .. self.lexer:next().kind)
+			local node = self.lexer:next()
+			-- print("++ " .. node.kind .. "='" .. node.value .. "'")
 		end
 	end
 end

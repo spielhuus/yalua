@@ -14,8 +14,20 @@ test_dependencies = {
 	"rapidjson",
 	"busted-htest",
 	"luacov",
+	"luacov-reporter-lcov",
 }
 
 source = {
 	url = "git://github.com/spielhuus/" .. package,
+}
+
+build = {
+	type = "builtin",
+	modules = {
+		["Lexer"] = "Lexer.lua",
+		["Parser"] = "Parser.lua",
+		["str"] = "str.lua",
+		["StringIterator"] = "StringIterator.lua",
+		["yalua"] = "yalua.lua",
+	},
 }

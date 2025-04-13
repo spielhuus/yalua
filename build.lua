@@ -7,6 +7,10 @@ local yalua = require("yalua")
 PATH_SUITE = "yaml-test-suite"
 TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
 PATH_TESTS = "spec/suite"
+PATH_TREE = ".luarocks"
+COVERAGE_HTML = "coverage"
+
+CMD_LUAROCKS = "CMAKE_POLICY_VERSION_MINIMUM=3.5 luarocks --tree " .. PATH_TREE .. " --lua-version 5.1 "
 
 local function get_files_in_directory(directory)
 	local files = {}
@@ -165,11 +169,16 @@ local function spec_tree(data)
 	)
 end
 
-local function prepare_suite()
+local function clone_test_suite()
 	if not dir_exists(PATH_SUITE) then
+		print("[INFO] Clone the yaml test suite")
 		os.execute("git clone " .. TEST_SUITE .. " " .. PATH_SUITE)
 		os.execute("make -C " .. PATH_SUITE .. " data")
 	end
+end
+
+local function prepare_suite()
+	clone_test_suite()
 	-- read all the test files
 	local data = {}
 	for _, file in ipairs(get_files_in_directory(string.format("%s/src", PATH_SUITE))) do
@@ -185,10 +194,24 @@ local function prepare_suite()
 	spec_tree(data)
 end
 
+local function coverage()
+	print("[INFO] create the test coverage.")
+	prepare_suite()
+	if os.execute(CMD_LUAROCKS .. 'test spec/suite/tree_spec.lua -- --exclude-tags="SM9W,2G84" -c') ~= 0 then
+		print("[ERROR] Test coverage did not run successfully")
+	end
+	if os.execute("luacov -r lcov") ~= 0 then
+		error("converting coverage to lcov failed")
+	end
+	if os.execute("genhtml luacov.report.out -o " .. COVERAGE_HTML) ~= 0 then
+		error("generating html files from coverage stats failed.")
+	end
+end
+
 local function suite()
 	print("[INFO] Prepare test suite.")
 	prepare_suite()
-	if os.execute('busted spec/suite/tree_spec.lua --exclude-tags="SM9W,2G84"') ~= 0 then
+	if os.execute(CMD_LUAROCKS .. 'test spec/suite/tree_spec.lua -- --exclude-tags="SM9W,2G84"') ~= 0 then
 		error("Test suite did not run successfully")
 	end
 end
@@ -198,10 +221,19 @@ local function clean()
 	os.execute("rm -rf " .. PATH_SUITE)
 	print("[RUN] rm -rf " .. PATH_TESTS)
 	os.execute("rm -rf " .. PATH_TESTS)
+	print("[RUN] rm -rf " .. PATH_TREE)
+	os.execute("rm -rf " .. PATH_TREE)
+	print("[RUN] rm -rf " .. COVERAGE_HTML)
+	os.execute("rm -rf " .. COVERAGE_HTML)
+	print("[RUN] rm  luacov.stats.out")
+	os.execute("rm luacov.stats.out")
+	print("[RUN] rm  luacov.report.out")
+	os.execute("rm luacov.report.out")
 end
 
 local function test()
-	if os.execute("busted spec/test") ~= 0 then
+	clone_test_suite()
+	if os.execute(CMD_LUAROCKS .. "test spec/test") ~= 0 then
 		error("Tests did not run successfully")
 	end
 end
@@ -228,10 +260,11 @@ end
 local function print_usage()
 	print("Usage: ./build.lua <command>")
 	print("Commands:")
-	print("  test   - Run unit tests")
-	print("  check  - Run luacheck")
-	print("  suite  - Run YAML test suite")
-	print("  clean  - Clean test suite and build files")
+	print("  test      - Run unit tests")
+	print("  check     - Run luacheck")
+	print("  suite     - Run YAML test suite")
+	print("  coverage  - Run test coverage")
+	print("  clean     - Clean test suite and build files")
 	print("  dump <filename> - Dump lexer output for a file")
 end
 
@@ -243,6 +276,8 @@ if is_main(arg, ...) then
 		check()
 	elseif arg[1] == "suite" then
 		suite()
+	elseif arg[1] == "coverage" then
+		coverage()
 	elseif arg[1] == "clean" then
 		clean()
 	elseif arg[1] == "dump" then

@@ -29,7 +29,7 @@ preview: return function(args, data) require("lungan.nvim.diff").preview(args, d
 options:
   temperature: 0.01
   num_ctx: 4096
- ]]
+]]
 
 		local expect = {
 			provider = {
