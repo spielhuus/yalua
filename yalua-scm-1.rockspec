@@ -13,6 +13,7 @@ test_dependencies = {
 	"busted",
 	"rapidjson",
 	"busted-htest",
+	"luacov",
 }
 
 source = {

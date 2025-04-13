@@ -1,10 +1,10 @@
 #!/usr/bin/env luajit
+
 ---lua build file
 
 local yalua = require("yalua")
 
-PATH_SUITE = "spec/suite"
-PATH_SUITE = "yaml_test_suite"
+PATH_SUITE = "yaml-test-suite"
 TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
 
 local function get_files_in_directory(directory)
@@ -13,6 +13,17 @@ local function get_files_in_directory(directory)
 		table.insert(files, file)
 	end
 	return files
+end
+
+--escape the double quotes in the string
+--@param str string
+--@return string
+local function escape(str)
+	if not str then
+		return ""
+	else
+		return (str:gsub('"', '\\"'))
+	end
 end
 
 local function dir_exists(path)
@@ -25,7 +36,7 @@ local function dir_exists(path)
 	end
 end
 
-function get_file_content(path)
+local function get_file_content(path)
 	local file = io.open(path, "r")
 	if not file then
 		return nil, "can not open file " .. path
@@ -53,7 +64,6 @@ end
 ---split a string by words and prefix each word with a hash
 ---@param str any
 local function prefix_hash(str)
-	print("prefix: " .. (str or "nil"))
 	local words = {}
 	for word in str:gmatch("%S+") do
 		table.insert(words, "#" .. word)
@@ -61,81 +71,80 @@ local function prefix_hash(str)
 	return table.concat(words, " ")
 end
 
+local function remove_extension(file)
+	return file:match("(.+)%.%w+$") or file
+end
+
 local function spec_tree(data)
 	local result = {}
-	table.insert(result, 'local assert = require("luassert")\n')
-	table.insert(result, 'local yalua = require("yalua")\n')
-
-	table.insert(result, "\nlocal function load_file(file_path)\n")
-	table.insert(result, '    local file = io.open(file_path, "r")\n')
-	table.insert(result, "    if not file then\n")
-	table.insert(result, '        return nil, "File not found"\n')
-	table.insert(result, "    end\n")
-	table.insert(result, '    local content = file:read("*all")\n')
-	table.insert(result, "    file:close()\n")
-	table.insert(result, "    return content\n")
-	table.insert(result, "end\n\n")
-
-	table.insert(result, "local function remove_trailing_spaces(str)\n")
-	table.insert(result, '  return str:gsub("^%s+", "")\n')
-	table.insert(result, "end\n")
-	table.insert(result, "\n")
-	table.insert(result, "local function remove_all_trailing_spaces(multiline_str)\n")
-	table.insert(result, "  local lines = {}\n")
-	table.insert(result, '  for line in multiline_str:gmatch("[^\\r\\n]+") do\n')
-	table.insert(result, "    local res = remove_trailing_spaces(line)\n")
-	table.insert(result, "    table.insert(lines, res)\n")
-	table.insert(result, "  end\n")
-	table.insert(result, '  table.insert(lines, "")')
-	table.insert(result, '  return table.concat(lines, "\\n")\n')
-	table.insert(result, "end\n\n")
-
-	table.insert(result, 'describe("Run the YAML test #suite, compare with TREE", function()\n')
+	table.insert(result, 'local assert = require("luassert")')
+	table.insert(result, 'local yalua = require("yalua")')
+	table.insert(result, "")
+	table.insert(result, 'describe("Run the YAML test #suite, compare with test.event", function()\n')
+	table.insert(result, "  local function load_file(file_path)")
+	table.insert(result, '    local file = io.open(file_path, "r")')
+	table.insert(result, "    if not file then")
+	table.insert(result, '        return nil, "File not found"')
+	table.insert(result, "    end")
+	table.insert(result, '    local content = file:read("*all")')
+	table.insert(result, "    file:close()")
+	table.insert(result, "    return content")
+	table.insert(result, "  end")
 	for i, testfile in ipairs(data) do
-		print("TEST: " .. i .. " " .. testfile["file"])
+		print("TEST: " .. i .. " " .. require("str").to_string(testfile))
 		local test_nr = 0
 		local name, the_yaml, tags
+		local filename = testfile["file"]
+		local skip = false
 		for _, test in ipairs(testfile) do
-			print(require("str").to_string(test))
-			name = test["name"]
-			tags = prefix_hash(test["tags"] or tags)
-			local filename = test["file"]
-			file = test["file"]
+			name = (test["name"] and test["name"] or name)
+			tags = (test["tags"] and prefix_hash(test["tags"]) or tags)
+			local file = string.format("%s/data/%s/in.yaml", PATH_SUITE, remove_extension(filename))
+			local event = string.format("%s/data/%s/test.event", PATH_SUITE, remove_extension(filename))
 			the_yaml = test["yaml"]
-			if #testfile > 1 then
-				file = string.format("{%s}/{%d:02d}", file, test_nr)
-				the_yaml = string.format("%s/%s:02d", the_yaml, test_nr)
+			if #testfile > 9 then
+				file = string.format("%s/data/%s/%03d/in.yaml", PATH_SUITE, remove_extension(filename), test_nr)
+				event = string.format("%s/data/%s/%03d/test.event", PATH_SUITE, remove_extension(filename), test_nr)
+				the_yaml = string.format("%s/%03d", the_yaml, test_nr)
+			elseif #testfile > 1 then
+				file = string.format("%s/data/%s/%02d/in.yaml", PATH_SUITE, remove_extension(filename), test_nr)
+				event = string.format("%s/data/%s/%02d/test.event", PATH_SUITE, remove_extension(filename), test_nr)
+				the_yaml = string.format("%s/%02d", the_yaml, test_nr)
 			end
 			local fail = test["fail"] and true or false
-			local tree = test["tree"]
-			table.insert(
-				result,
-				string.format(
-					'  it("should parse the {escape(name)}, file: #%s tags: %s", function()\n',
-					filename,
-					tags
+			if not skip and test["skip"] then
+				skip = true
+			end
+			if not skip then
+				table.insert(result, "")
+				table.insert(
+					result,
+					string.format(
+						'  it("should parse the %s, file: #%s tags: %s", function()',
+						escape(name),
+						remove_extension(filename),
+						tags
+					)
 				)
-			)
-			table.insert(result, string.format('    print("### should parse the %s, file: #%s")\n', name, filename))
-			table.insert(result, string.format('    local input = load_file("{temp_dir}/data/{file}/in.yaml")\n'))
-			-- if fail:
-			--     f.write("    local result = yalua.stream(input)\n")
-			--     f.write("    assert.Equal(nil, result)\n")
-			--     f.write(f"  end)\n")
-			-- else:
-			--     f.write(
-			--         f'    local tree = load_file("{temp_dir}/data/{file}/test.event")\n'
-			--     )
-			--     f.write("    local result = yalua.stream(input)\n")
-			--     f.write(
-			--         "    assert.is.Same(tree, remove_all_trailing_spaces(result))\n"
-			--     )
-			--     f.write(f"  end)\n")
-
+				table.insert(
+					result,
+					string.format('    print("### should parse the %s, file: %s")', escape(name), file)
+				)
+				table.insert(result, string.format('    local input = load_file("%s")', file))
+				if fail then
+					table.insert(result, string.format("    local result = yalua.stream(input)"))
+					table.insert(result, string.format("    assert.Equal(nil, result)"))
+				else
+					table.insert(result, string.format('    local tree = load_file("%s")', event))
+					table.insert(result, string.format("    local result = yalua.stream(input)"))
+					table.insert(result, string.format("    assert.is.Same(tree, result)"))
+				end
+				table.insert(result, "  end)")
+			end
 			test_nr = test_nr + 1
 		end
-		table.insert(result, "end)\n\n")
 	end
+	table.insert(result, "end)")
 	write("spec/suite/tree_spec.lua", result)
 end
 
@@ -148,12 +157,12 @@ local function prepare_suite()
 	local data = {}
 	for _, file in ipairs(get_files_in_directory(string.format("%s/src", PATH_SUITE))) do
 		local filename = string.format("%s/src/%s", PATH_SUITE, file)
-		print("Process file: " .. filename)
 		local test, mes = yalua.parse(filename)
 		if not test then
 			error("[ERROR] Can not load thestfile: " .. file .. " " .. mes)
 		end
 		print(string.format("Parse: %s: %s", file, test[1].name))
+		assert(file)
 		test["file"] = file
 		table.insert(data, test)
 	end
@@ -166,6 +175,7 @@ end
 
 local function clean()
 	os.execute("rm -rf " .. PATH_SUITE)
+	os.execute("rm -rf spec/suite")
 end
 
 local function test()
@@ -175,7 +185,7 @@ local function test()
 end
 
 local function check()
-	if os.execute("luacheck StringIterator.lua Lexer.lua Parser.lua") ~= 0 then
+	if os.execute("luacheck StringIterator.lua Lexer.lua Parser.lua yalua.lua") ~= 0 then
 		error("luacheck did not run successfully")
 	end
 end

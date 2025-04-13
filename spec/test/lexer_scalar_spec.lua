@@ -99,8 +99,8 @@ plain: |
 +MAP
 =VAL :yaml
 =VAL |--- |1-∎\n
-=VAL another
-=VAL value
+=VAL :another
+=VAL :value
 -MAP
 -SEQ
 -DOC

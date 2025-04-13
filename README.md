@@ -11,11 +11,10 @@
 this is a pure lua implentation of a YAML parser. the yaml.lua file is self contained. 
 
 ```lua
-str = "aaa \b \n bbb "
-res = string.find(str, '\\[nrtbfv]') 
-print(res)
-str = string.gsub(str, "\\([b|t|r])", function(hex)
-print(hex)
+list = {1, 2, 3, 4}
+print(table.concat(list, ","))
+table.insert(list, #list, 99)
+print(table.concat(list, ","))
 end)
 ```
 
@@ -46,18 +45,15 @@ print(string.match(str, "^(:%s)", 1))
 import yaml
 
 data = """
->
- folded
- text
-  
-
- a
-
+"text 
+ line \
+   line
+"
 """
 
 parsed = yaml.safe_load(data)
 
-print("'" + parsed + "'")
+print(parsed)
 
 ```
 

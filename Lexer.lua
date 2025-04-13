@@ -1250,9 +1250,9 @@ function Lexer:sequence(indent)
 			elseif self:is_key() then
 				print("seq: found key")
 				-- handle mapping on the same line
-				if self:next_indent() > indent then
-					print("call map with next indent")
-					res, mes = self:block_node(self:next_indent(), true)
+				if self:next_indent() > indent then -- TODOO: could this also be col?
+					print("call map with next indent: next: " .. self:next_indent() .. ", col: " .. self.iter.col)
+					res, mes = self:block_node(self.iter.col, true)
 				else
 					res, mes = self:block_node(indent, false)
 				end
