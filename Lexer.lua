@@ -1173,33 +1173,34 @@ function Lexer:map(indent)
 			self.iter:next()
 			self.iter:skip_space()
 			print("map next char: " .. self.iter:peek())
-			if self:tag_anchor_alias(indent) == "*" then -- TODO: combine with else
-			elseif self.iter:peek() == NL then
-				self.iter:next()
-				local next_indent = self:indent()
-				self.iter:skip_space()
-				print("character after nl " .. (self.iter:peek() or "eof"))
-				if self.iter:peek() == "#" then
-					print("skip comment on new line")
+			if self:tag_anchor_alias(indent) ~= "*" then
+				if self.iter:peek() == NL then
+					self.iter:next()
+					local next_indent = self:indent()
+					self.iter:skip_space()
+					print("character after nl " .. (self.iter:peek() or "eof"))
+					if self.iter:peek() == "#" then
+						print("skip comment on new line")
+						self:comment()
+						next_indent = self:next_indent()
+						self.iter:next(next_indent + 1)
+					end
+					res, mes = self:block_node(next_indent, true)
+				elseif self.iter:peek() == "#" then
 					self:comment()
-					next_indent = self:next_indent()
+					local next_indent = self:next_indent()
+					print("found comment:" .. next_indent)
 					self.iter:next(next_indent + 1)
+					res, mes = self:block_node(next_indent, true)
+				elseif self.iter:match(" -") then -- TODO: this is unchecked
+					error("unreachable") -- TODO
+					-- table.insert(self.tokens, { kind = MAP_END, indent = indent })
+					self:push(MAP_END, indent, nil)
+					return OK
+				else
+					print("map: enter block node: " .. indent .. ":" .. self:next_indent())
+					res, mes = self:block_node(indent, false)
 				end
-				res, mes = self:block_node(next_indent, true)
-			elseif self.iter:peek() == "#" then
-				self:comment()
-				local next_indent = self:next_indent()
-				print("found comment:" .. next_indent)
-				self.iter:next(next_indent + 1)
-				res, mes = self:block_node(next_indent, true)
-			elseif self.iter:match(" -") then -- TODO: this is unchecked
-				error("unreachable") -- TODO
-				-- table.insert(self.tokens, { kind = MAP_END, indent = indent })
-				self:push(MAP_END, indent, nil)
-				return OK
-			else
-				print("map: enter block node: " .. indent .. ":" .. self:next_indent())
-				res, mes = self:block_node(indent, false)
 			end
 			if not self.iter:eof() then
 				if self:next_indent() < indent then

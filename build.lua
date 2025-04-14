@@ -101,7 +101,7 @@ local function spec_tree(data)
 	table.insert(result, "  end")
 	for _, testfile in ipairs(data) do
 		local test_nr = 0
-		local name, the_yaml, tags
+		local name, tags
 		local filename = testfile["file"]
 		local skip = false
 		for _, test in ipairs(testfile) do
@@ -109,15 +109,12 @@ local function spec_tree(data)
 			tags = (test["tags"] and prefix_hash(test["tags"]) or tags)
 			local file = string.format("%s/data/%s/in.yaml", PATH_SUITE, remove_extension(filename))
 			local event = string.format("%s/data/%s/test.event", PATH_SUITE, remove_extension(filename))
-			the_yaml = test["yaml"]
 			if #testfile > 9 then
 				file = string.format("%s/data/%s/%03d/in.yaml", PATH_SUITE, remove_extension(filename), test_nr)
 				event = string.format("%s/data/%s/%03d/test.event", PATH_SUITE, remove_extension(filename), test_nr)
-				the_yaml = string.format("%s/%03d", the_yaml, test_nr)
 			elseif #testfile > 1 then
 				file = string.format("%s/data/%s/%02d/in.yaml", PATH_SUITE, remove_extension(filename), test_nr)
 				event = string.format("%s/data/%s/%02d/test.event", PATH_SUITE, remove_extension(filename), test_nr)
-				the_yaml = string.format("%s/%02d", the_yaml, test_nr)
 			end
 			local fail = test["fail"] and true or false
 			if not skip and test["skip"] then
@@ -244,11 +241,11 @@ local function check()
 	end
 end
 
-local function is_main(_arg, ...)
-	local n_arg = _arg and #_arg or 0
+local function is_main(arg, ...)
+	local n_arg = arg and #arg or 0
 	if n_arg == select("#", ...) then
 		for i = 1, n_arg do
-			if _arg[i] ~= select(i, ...) then
+			if arg[i] ~= select(i, ...) then
 				return false
 			end
 		end
