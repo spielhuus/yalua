@@ -11,11 +11,10 @@
 this is a pure lua implentation of a YAML parser. the yaml.lua file is self contained. 
 
 ```lua
-list = {1, 2, 3, 4}
-print(table.concat(list, ","))
-table.insert(list, #list, 99)
-print(table.concat(list, ","))
-end)
+
+str = "\t \tThis\tis a test string." 
+str = str:gsub(" +", "") 
+print(str)  -- Output: Thisisateststring. 
 ```
 
 ```lua

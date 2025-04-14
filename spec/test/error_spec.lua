@@ -27,4 +27,15 @@ bar: 2 }
 		assert.Equal(nil, lexer)
 		assert.Equal("ERROR:4:5 missing comma in flow mapping\nfoo: 1\n     ^", mes)
 	end)
+
+	it("should handle, nested key", function()
+		local doc = [[ 
+---
+key: wrong: value
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, mes = Lexer:new(iter)
+		assert.Equal(nil, lexer)
+		assert.Equal("ERROR:3:5 invalid nested block mapping on the same line\nkey: wrong: value\n     ^", mes)
+	end)
 end)

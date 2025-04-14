@@ -194,7 +194,7 @@ end
 local function coverage()
 	print("[INFO] create the test coverage.")
 	prepare_suite()
-	if os.execute(CMD_LUAROCKS .. 'test spec/suite/tree_spec.lua -- --exclude-tags="SM9W,2G84" -c') ~= 0 then
+	if os.execute(CMD_LUAROCKS .. "test spec/suite/tree_spec.lua -- -c") ~= 0 then
 		print("[ERROR] Test coverage did not run successfully")
 	end
 	if os.execute("luacov -r lcov") ~= 0 then
@@ -208,7 +208,7 @@ end
 local function suite()
 	print("[INFO] Prepare test suite.")
 	prepare_suite()
-	if os.execute(CMD_LUAROCKS .. 'test spec/suite/tree_spec.lua -- --exclude-tags="SM9W,2G84"') ~= 0 then
+	if os.execute(CMD_LUAROCKS .. "test spec/suite/tree_spec.lua") ~= 0 then
 		error("Test suite did not run successfully")
 	end
 end

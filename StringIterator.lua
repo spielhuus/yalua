@@ -88,7 +88,6 @@ end
 ---Skip all the spaces
 function StringIterator:skip_space()
 	while self:peek() and (self:peek() == " " or self:peek() == "\t") do
-		print("skip space")
 		self:next()
 	end
 end

@@ -302,4 +302,42 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 		local lexer = Lexer:new(iter)
 		assert.is.Same(expect, tostring(lexer))
 	end)
+	it("should handle quoted key", function()
+		local doc = [[
+---
+{ "a": b }
+]]
+		local expect = [[
++STR
++DOC ---
++MAP {}
+=VAL "a
+=VAL :b
+-MAP
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
+	it("should handle quoted key without space", function()
+		local doc = [[
+---
+{ "a":b }
+]]
+		local expect = [[
++STR
++DOC ---
++MAP {}
+=VAL "a
+=VAL :b
+-MAP
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
 end)
