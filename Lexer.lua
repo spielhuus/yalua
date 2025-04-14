@@ -372,6 +372,8 @@ end
 ---Get the block indentation
 ---get the indentation of the first non empty line
 ---@param indent integer The content indentation level.
+---@return table|nil
+---@return string|nil
 function Lexer:block_indent(indent, hint, floating)
 	print(
 		"block_indent:"
@@ -448,7 +450,10 @@ function Lexer:scalar(indent, floating)
 	local txt = trim(table.concat(chars, ""))
 	if floating and self:next_indent() >= indent then
 		self.iter:next()
-		local lines = self:block_indent(indent, nil, floating)
+		local lines, mes = self:block_indent(indent, nil, floating)
+		if not lines then
+			return ERR, mes
+		end
 		print(require("str").to_string(lines))
 		for _, line in ipairs(lines) do
 			if line ~= "" then
@@ -619,15 +624,19 @@ function Lexer:folded_attrs()
 	return chopped, indent
 end
 
+---@return string|number the chomping inddicator or nil on error
+---@return string|nil the indentation indicator or the error message
 function Lexer:folded(indent)
 	assert(self.iter:peek() == ">")
 	self.iter:next()
 	local chopped, indent_hint = self:folded_attrs()
 	if chopped == nil then
+		assert(type(indent_hint) == "string")
 		return ERR, indent_hint
 	end
 	local lines, mes = self:block_indent(indent, indent_hint, false)
 	if not lines then
+		assert(type(mes) == "string")
 		return ERR, mes
 	end
 	print(require("str").to_string(lines))
@@ -690,15 +699,21 @@ function Lexer:folded(indent)
 	return result
 end
 
+---@param indent any
+---@param floating any
+---@return string|number
+---@return string|nil
 function Lexer:literal(indent, floating)
 	assert(self.iter:peek() == "|")
 	self.iter:next()
 	local chopped, hint = self:folded_attrs()
 	if chopped == nil then
+		assert(type(hint) == "string")
 		return ERR, hint
 	end
 	local lines, mes = self:block_indent(indent, hint, floating)
 	if not lines then
+		assert(mes)
 		return ERR, mes
 	end
 	print("Literal Lines:" .. require("str").to_string(lines))
@@ -1366,6 +1381,7 @@ function Lexer:block_node(indent, floating)
 			local next_indent = self:next_indent()
 			local literal, message = self:literal(indent, next_indent == indent)
 			if literal == ERR then
+				assert(type(literal) == "integer" and message)
 				return literal, message
 			end
 			self:push(CHARS, next_indent, literal, "literal")
@@ -1374,6 +1390,7 @@ function Lexer:block_node(indent, floating)
 			local next_indent = self:next_indent()
 			local folded, message = self:folded(indent)
 			if folded == ERR then
+				assert(type(folded) == "integer" and message)
 				return folded, message
 			end
 			self:push(CHARS, next_indent, folded, "folded")

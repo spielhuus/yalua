@@ -15,6 +15,7 @@ test_dependencies = {
 	"busted-htest",
 	"luacov",
 	"luacov-reporter-lcov",
+	"llscheck",
 }
 
 source = {
