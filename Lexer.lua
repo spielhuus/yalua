@@ -381,7 +381,7 @@ function Lexer:block_indent(indent, hint, floating)
 			.. ", hint: "
 			.. (hint or "nil")
 			.. " '"
-			.. self.iter:peek()
+			.. (self.iter:peek() or "eof")
 			.. "'"
 	)
 	local lines = {}
@@ -598,7 +598,7 @@ end
 function Lexer:folded_attrs()
 	local indent = 0
 	local chopped = CLIP
-	while self.iter:peek() ~= NL do
+	while self.iter:peek() and self.iter:peek() ~= NL do
 		if self.iter:peek() == STRIP then
 			chopped = STRIP
 			self.iter:next()
@@ -614,7 +614,7 @@ function Lexer:folded_attrs()
 			return nil, self:error("Unknown literal attribute: '" .. self.iter:peek() .. "'")
 		end
 	end
-	assert(self.iter:peek() == NL)
+	-- assert(self.iter:peek() == NL)
 	self.iter:next()
 	return chopped, indent
 end
@@ -824,6 +824,18 @@ function Lexer:tag(indent)
 	return OK
 end
 
+function Lexer:check_no_content()
+	while self.iter:peek() and self.iter:peek() ~= NL do
+		if self.iter:match("# ") then
+			return OK
+		elseif self.iter:peek() ~= " " then
+			return ERR, self:error("Unexpected content after flow block: " .. self.iter:peek())
+		end
+		self.iter:next()
+	end
+	return OK
+end
+
 function Lexer:flow(indent)
 	local level = 0
 	local res, mes = OK, nil
@@ -838,7 +850,8 @@ function Lexer:flow(indent)
 			self.iter:next()
 			level = level - 1
 			if level == 0 then
-				return OK
+				res, mes = self:check_no_content()
+				return res, mes
 			end
 		elseif self.iter:match("[") then
 			self.iter:next()
@@ -849,7 +862,8 @@ function Lexer:flow(indent)
 			self.iter:next()
 			level = level - 1
 			if level == 0 then
-				return OK
+				res, mes = self:check_no_content()
+				return res, mes
 			end
 		else
 			error("unknown character '" .. self.iter:next() .. "'")
@@ -973,7 +987,7 @@ function Lexer:flow_seq(indent)
 			end
 		end
 	end
-	error("unreachable")
+	return ERR, self:error("End of sequence not found.")
 end
 
 ---Parse a flow map
@@ -990,7 +1004,6 @@ function Lexer:flow_map(indent)
 			if chars and #trim(table.concat(chars, "")) > 0 then
 				self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
 			end
-			char_type = nil
 			self:push("-MAP", indent, nil)
 			return OK
 		elseif self.iter:match("!") then
@@ -1302,16 +1315,7 @@ function Lexer:sequence(indent)
 				self:push(SEQ_END, indent, nil)
 				return OK
 			elseif next_indent > indent then
-				error(
-					"bigger indent not implemented: "
-						.. indent
-						.. "-"
-						.. next_indent
-						.. " "
-						.. self.iter.row
-						.. ":"
-						.. self.iter.col
-				)
+				return ERR, self:error("Wrong indentation")
 			end
 			self.iter:next(next_indent + 1)
 		else
