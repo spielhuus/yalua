@@ -1215,10 +1215,10 @@ function Lexer:map(indent)
 					self:comment()
 					local next_indent = self:next_indent()
 					print("found comment:" .. next_indent)
-					if next_indent == indent then
+					self.iter:next(next_indent + 1)
+					if next_indent == indent and self:is_key() then
 						self:push(CHARS, indent, "")
 					else
-						self.iter:next(next_indent + 1)
 						res, mes = self:block_node(next_indent, true)
 					end
 				elseif self.iter:match(" -") then -- TODO: this is unchecked
@@ -1583,8 +1583,6 @@ function Lexer:__tostring()
 						escape(t.value)
 					)
 				)
-				anchor = nil
-				tag = nil
 			else
 				table.insert(
 					str,
