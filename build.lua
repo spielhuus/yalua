@@ -241,6 +241,12 @@ local function check()
 	end
 end
 
+local function lls()
+	if os.execute("llscheck --configpath .luarc.json") ~= 0 then
+		error("LLS checks did not run successfully")
+	end
+end
+
 local function is_main(arg, ...)
 	local n_arg = arg and #arg or 0
 	if n_arg == select("#", ...) then
@@ -259,6 +265,7 @@ local function print_usage()
 	print("Commands:")
 	print("  test      - Run unit tests")
 	print("  check     - Run luacheck")
+	print("  lls       - Run lls checks")
 	print("  suite     - Run YAML test suite")
 	print("  coverage  - Run test coverage")
 	print("  clean     - Clean test suite and build files")
@@ -271,6 +278,8 @@ if is_main(arg, ...) then
 		return test()
 	elseif arg[1] == "check" then
 		check()
+	elseif arg[1] == "lls" then
+		lls()
 	elseif arg[1] == "suite" then
 		suite()
 	elseif arg[1] == "coverage" then
