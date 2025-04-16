@@ -48,6 +48,16 @@ local KEEP = "+"
 local OK = 0
 local ERR = 1
 
+-- Function to check if a single character string is alphanumeric
+-- local function isalnum(char)
+-- 	if type(char) ~= "string" or #char ~= 1 then
+-- 		return false
+-- 	end
+-- 	local res = string.match(char, "^[a-zA-Z0-9]$") ~= nil
+-- 	print("isalnum '" .. char .. "' == " .. tostring(res))
+-- 	return res
+-- end
+
 ---escape the backslashes
 local function escape(str)
 	if type(str) == "number" then
@@ -134,6 +144,95 @@ function Lexer:next_indent()
 		j = j + 1
 	end
 	return j
+end
+
+function Lexer:flow_complex_key(indent, flow_type)
+	print("consume_complex_key: ")
+	if flow_type == "]" then
+		self:push("+MAP {}", indent, nil)
+	end
+	local chars = {}
+	local result = nil
+	self.iter:next()
+	while not self.iter:eof() do
+		if self.iter:match(":") then
+			self.iter:next()
+			if self.iter:match(" ") or self.iter:match(",") or self.iter:match(flow_type) then
+				print("found key: " .. table.concat(chars, ""))
+				if #chars > 0 then
+					local line = table.concat(chars, "")
+					if not result then
+						result = trim(line)
+					else
+						result = result .. " " .. trim(line)
+					end
+					self:push(KEY, indent, result)
+				end
+				self.iter:skip_space()
+				print("after colon: " .. self.iter:peek())
+				if self.iter:match(",") or self.iter:match(flow_type) then
+					print("insert empty value and return")
+					self:push(CHARS, indent, "")
+					self.iter:next()
+					return OK
+				end
+			end
+			break
+		elseif self.iter:match(flow_type) or self.iter:match(",") then
+			self:push(KEY, indent, result)
+			self:push(CHARS, indent, "")
+			if flow_type == "]" then
+				self:push("-MAP", indent, nil)
+			end
+			return OK
+		elseif self.iter:match(NL) then
+			self.iter:next()
+			local line = table.concat(chars, "")
+			if not result then
+				result = trim(line)
+			else
+				result = result .. " " .. trim(line)
+			end
+			chars = {}
+		else
+			print("consume: " .. self.iter:peek())
+			table.insert(chars, self.iter:next())
+		end
+	end
+	-- collect the value
+	result = nil
+	chars = {}
+	while not self.iter:eof() do
+		if self.iter:match(flow_type) or self.iter:match(",") then
+			if #chars > 0 then
+				local line = table.concat(chars, "")
+				if not result then
+					result = trim(line)
+				else
+					result = result .. " " .. trim(line)
+				end
+			end
+			print("result: " .. (result or "nil"))
+			self:push(CHARS, indent, result)
+			if flow_type == "]" then
+				self:push("-MAP", indent, nil)
+			end
+			return OK
+		elseif self.iter:match(NL) then
+			self.iter:next()
+			local line = table.concat(chars, "")
+			if not result then
+				result = trim(line)
+			else
+				result = result .. " " .. trim(line)
+			end
+			chars = {}
+		else
+			print("consume val: " .. self.iter:peek())
+			table.insert(chars, self.iter:next())
+		end
+	end
+	error("unreachable")
 end
 
 function Lexer:is_key()
@@ -377,13 +476,13 @@ end
 ---@return string|nil
 function Lexer:block_indent(indent, hint, floating)
 	print(
-		"block_indent:"
+		"block_indent: indent:"
 			.. (indent or "nil")
 			.. ", floating: "
 			.. tostring(floating or "nil")
 			.. ", hint: "
 			.. (hint or "nil")
-			.. " '"
+			.. ", next: '"
 			.. (self.iter:peek() or "eof")
 			.. "'"
 	)
@@ -421,6 +520,9 @@ function Lexer:block_indent(indent, hint, floating)
 					return nil, self:error("Wrong indentation, found longer empty line before")
 				end
 			end
+			if self.iter:match("...") then
+				break
+			end
 		end
 	end
 	print("content indentation: " .. (content_indentation or "nil"))
@@ -437,8 +539,36 @@ function Lexer:block_indent(indent, hint, floating)
 end
 
 function Lexer:scalar(indent, floating)
-	print("scalar : " .. indent .. ", floating: " .. (tostring(floating)))
+	print("scalar : " .. indent .. ", floating: " .. (tostring(floating)) .. ", col: " .. self.iter.col)
 	local chars = {}
+	if self.iter.col == 0 then
+		-- root block is a scalar, just read everything
+		local scalar = ""
+		while not self.iter:eof() do
+			if self.iter:match(NL) then
+				local line = table.concat(chars, "")
+				if #string.gsub(line, " +", "") == 0 then
+					scalar = scalar .. NL
+				elseif #scalar == 0 then
+					scalar = trim(line)
+				elseif string.sub(scalar, #scalar) == NL then
+					scalar = scalar .. trim(line)
+				else
+					scalar = scalar .. " " .. trim(line)
+				end
+				self.iter:next()
+				if self.iter:match("...") or self.iter:match("---") then
+					break
+				end
+				chars = {}
+			else
+				table.insert(chars, self.iter:next())
+			end
+		end
+		self:push(CHARS, indent, scalar)
+		return OK
+	end
+	--- get the indented content
 	while self.iter:peek() and self.iter:peek() ~= NL do
 		if self.iter:match(" #") or self.iter:match("\t#") then
 			self:comment()
@@ -795,6 +925,7 @@ function Lexer:alias(indent)
 	self.iter:next()
 	local alias = {}
 	while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
+		-- while isalnum(self.iter:peek()) do
 		table.insert(alias, self.iter:next())
 	end
 	self:push(ALIAS, indent, table.concat(alias, ""))
@@ -815,7 +946,7 @@ end
 
 function Lexer:tag(indent)
 	local tag_text = {}
-	print("start tag: " .. self.iter:peek())
+	print("start tag: " .. indent .. " " .. self.iter:peek())
 	assert(self.iter:peek() == "!")
 	table.insert(tag_text, self.iter:next())
 
@@ -993,12 +1124,14 @@ function Lexer:flow_seq(indent)
 			chars_type = self.iter:peek()
 			chars = self:quoted()
 			self.iter:skip_space()
-		elseif self.iter:match("?") then
-			self:complex(indent)
+		elseif self.iter:match("? ") then
+			self:flow_complex_key(indent, "]")
 		elseif self.iter:match(NL) then
 			self.iter:next()
 			self.iter:skip_space()
-			table.insert(chars, " ")
+			if chars then
+				table.insert(chars, " ")
+			end
 		else
 			if chars then
 				table.insert(chars, self.iter:next())
@@ -1020,6 +1153,7 @@ function Lexer:flow_map(indent)
 	local char_type = nil
 	self:push("+MAP {}", indent, nil)
 	while not self.iter:eof() do
+		print("{} -> '" .. self.iter:peek() .. "'")
 		if self.iter:match("}") then
 			if chars and #trim(table.concat(chars, "")) > 0 then
 				self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
@@ -1027,7 +1161,7 @@ function Lexer:flow_map(indent)
 			self:push("-MAP", indent, nil)
 			return OK
 		elseif self.iter:match("!") then
-			self:tag()
+			self:tag(indent)
 			chars = {}
 		elseif self.iter:match(":,") then
 			if chars then
@@ -1037,6 +1171,8 @@ function Lexer:flow_map(indent)
 			chars = nil
 			self.iter:next(2)
 			self:sep()
+		elseif self.iter:match("?") then
+			self:flow_complex_key(indent, "}")
 		elseif (char_type and self.iter:match(":")) or self.iter:match(": ") or self.iter:match(":\n") then
 			if chars then
 				self:push(KEY, indent, trim(table.concat(chars, "")), char_type)
@@ -1048,6 +1184,14 @@ function Lexer:flow_map(indent)
 			-- is it an empty value
 			if self.iter:peek() == "," or self.iter:peek() == "}" then
 				self:push(CHARS, indent, "")
+			elseif self.iter:match(ALIAS) then
+				print("found alias in key")
+				self:alias(indent)
+				self.iter:skip_space()
+				if self.iter:match(",") then
+					self.iter:next()
+					self.iter:skip_space()
+				end
 			end
 			-- search if it contains another key, means missing comma
 			local index = 1
@@ -1060,7 +1204,7 @@ function Lexer:flow_map(indent)
 		elseif self.iter:match(",") then
 			print("found sep")
 			if chars then
-				if self.tokens[#self.tokens].kind == KEY then
+				if self.tokens[#self.tokens].kind == KEY or self.tokens[#self.tokens].kind == "!" then
 					print("insert value")
 					self:push(CHARS, indent, trim(table.concat(chars, "")), char_type)
 					char_type = nil
@@ -1073,6 +1217,15 @@ function Lexer:flow_map(indent)
 			chars = nil
 			self.iter:next()
 			self:sep()
+			if self.iter:match(ALIAS) then
+				print("found alias")
+				self:alias(indent)
+				self.iter:skip_space()
+				if self.iter:match(",") then
+					self.iter:next()
+					self.iter:skip_space()
+				end
+			end
 		elseif self.iter:match('"') or self.iter:match("'") then
 			char_type = self.iter:peek()
 			chars = self:quoted()
@@ -1092,10 +1245,6 @@ function Lexer:flow_map(indent)
 			if self.iter:peek() == NL then
 				table.insert(chars, " ")
 				self.iter:next()
-				-- TODO: how can i handle this shit
-				-- if self:indent() <= indent then
-				-- 	return ERR, self:error("Wrong indentation in flow map")
-				-- end
 			else
 				table.insert(chars, self.iter:next())
 			end
@@ -1104,59 +1253,133 @@ function Lexer:flow_map(indent)
 	error("unreachable")
 end
 
+function Lexer:consume_key()
+	local chars = {}
+	while not self.iter:eof() and self.iter:peek() ~= ":" do
+		table.insert(chars, self.iter:next())
+	end
+	print("KEY: '" .. table.concat(chars, "") .. "'")
+	return chars
+end
+
+function Lexer:complex_value(indent, is_key)
+	local chars = {}
+	print("complex value: '" .. self.iter:peek() .. "'")
+	if self.iter:match("-") then
+		self:sequence(self.iter.col)
+		self.iter:next()
+	elseif self:is_key() then
+		self:map(self.iter.col)
+		self.iter:next()
+	elseif self.iter:match("[") or self.iter:match("{") then
+		self:flow(self.iter.col)
+		self.iter:next()
+	elseif self.iter:match("|") then
+		local val = self:literal(indent)
+		if is_key then
+			self:push(KEY, indent, val, "literal")
+		else
+			self:push(CHARS, indent, val, "literal")
+		end
+		self.iter:next()
+	elseif self.iter:match("'") or self.iter:match('"') then
+		local quote = self.iter:peek()
+		local txt = self:quoted()
+		self:push(CHARS, indent, table.concat(txt, ""), quote)
+	elseif self.iter:match(">") then
+		self:folded(indent)
+	else
+		while not self.iter:eof() do
+			if self.iter:peek() == NL then
+				if is_key then
+					self:push(KEY, indent, trim(table.concat(chars, "")))
+				else
+					self:push(CHARS, indent, trim(table.concat(chars, "")))
+				end
+				self.iter:next()
+				if self:indent() <= indent then
+					break
+				end
+			elseif self.iter:match(": ") then
+				if is_key then
+					self:push(KEY, indent, trim(table.concat(chars, "")))
+				else
+					self:push(CHARS, indent, trim(table.concat(chars, "")))
+				end
+				break
+			elseif self:is_comment() then
+				self:comment()
+			else
+				table.insert(chars, self.iter:next())
+			end
+		end
+	end
+end
+
 ---@param indent integer
 ---@return integer
 ---@return string|nil
 function Lexer:complex(indent)
-	self:push(MAP_START, indent, nil)
+	print("enter complex, indent: " .. indent .. " '" .. self.iter:peek() .. "'")
 	local res = OK
-	local mes
+	local mes = nil
+	assert(self.iter:match("?"))
+	self:push(MAP_START, indent, nil)
 	while not self.iter:eof() do
-		print("complex loop: " .. self.iter:peek())
 		if self.iter:match("? ") then
-			self.iter:next(2)
-			res, mes = self:block_node(self:next_indent())
-			print("after complex key: " .. (self.iter:peek() or "eof"))
-			if self.iter:peek() == NL then
+			self.iter:next(1)
+			self.iter:skip_space()
+			self:complex_value(indent, true)
+			self.iter:skip_space()
+			if self:is_comment() then
+				self:comment()
 				self.iter:next()
-				print("after next: '" .. (self.iter:peek() or "") .. "', indent: " .. self:indent())
-				assert(self:indent() == indent, "expected indent " .. indent .. " but found " .. self:indent())
-				self.iter:skip_space()
-				if self.iter:peek() == ":" then
-					print("found dash")
+			end
+			print("get value: '" .. (self.iter:peek() or "eof") .. "'")
+			if self.iter:match(":") then
+				self.iter:next(1)
+				if self.iter:match(NL) then
 					self.iter:next()
-					self.iter:skip_space()
-					if self.iter:peek() == NL then
-						local next_indent = self:next_indent()
-						self.iter:next(next_indent + 1)
-						print("complex: call block_node(" .. next_indent .. ", true)")
-						res, mes = self:block_node(next_indent, true)
-					else
-						print("complex: call block_node(" .. self:next_indent() .. ", false)")
-						res, mes = self:block_node(self:next_indent())
-					end
-				else
-					print("expected complex key character ':' but found '" .. (self.iter:peek() or "") .. "'")
-					self:push(CHARS, indent, "")
+					assert(self:indent() > indent)
 				end
-				print("<<<<<<<<<<<<<<<<")
+				self.iter:skip_space()
+				self:complex_value(indent, false)
+			else
+				print("push emtty")
+				self:push(CHARS, indent, "")
 			end
-		elseif self.iter:peek() == NL then
+		elseif self.iter:match(NL) then
+			print("complex newline")
+			if self:next_indent() < indent then
+				break
+			end
 			self.iter:next()
+			self.iter:skip_space()
 		elseif self:is_key() then
-			local key = {}
-			while self.iter:peek() ~= ":" do
-				table.insert(key, self.iter:next())
+			local chars = {}
+			while not self.iter:eof() and not self.iter:match(": ") do
+				table.insert(chars, self.iter:next())
 			end
-			self:push(KEY, indent, table.concat(key, ""))
-			self.iter:next(2)
-			res, mes = self:block_node(indent, false)
+			self:push(KEY, indent, trim(table.concat(chars, "")))
+			if self.iter:match(":") then
+				self.iter:next()
+				chars = {}
+				while not self.iter:eof() and not self.iter:match(NL) do
+					table.insert(chars, self.iter:next())
+				end
+				self:push(CHARS, indent, trim(table.concat(chars, "")))
+			else
+				self:push(CHARS, indent, "")
+			end
+		elseif self.iter:match("?\t") then
+			self.iter:next()
+			return ERR, self:error("cannot use tab for indentation of block entry")
 		else
-			error("complex return")
-			return res, mes
+			error("unreachable @" .. self.iter.row .. ":" .. self.iter.col)
 		end
 	end
 	self:push(MAP_END, indent, nil)
+
 	return res, mes
 end
 
@@ -1173,16 +1396,37 @@ function Lexer:map(indent)
 			self:push(MAP_END, indent, nil)
 			return OK
 		elseif self.iter:match("?") then
-			self:complex(indent)
+			res, mes = self:complex(indent) -- TODO can this also be in block_node
+		elseif (self.iter:match("[") or self.iter:match("{")) and self:flow_is_key() then
+			print("flow key")
+			res, mes = self:flow(indent)
+			self.iter:next()
+			if self.iter:peek() == NL then
+				self.iter:next()
+				local next_indent = self:indent()
+				self.iter:skip_space()
+				print("character after nl " .. (self.iter:peek() or "eof"))
+				if self.iter:peek() == "#" then
+					self:comment()
+					next_indent = self:next_indent()
+					self.iter:next(next_indent + 1)
+				else
+					error("not implemented")
+				end
+				res, mes = self:block_node(next_indent, true)
+			end
+			chars = nil
 		elseif self:is_key() then
+			print("found key")
 			self:tag_anchor_alias(indent)
 			local key = {}
 			if self.iter:peek() == "[" or self.iter:peek() == "{" then
+				error("this is unreachable")
 				self:flow(indent)
 			elseif self.iter:peek() == '"' or self.iter:peek() == "'" then
 				local quote_type = self.iter:peek()
 				key = self:quoted()
-				print("KEY: '" .. table.concat(key, "") .. "'")
+				print("quoted KEY: '" .. table.concat(key, "") .. "'")
 				self:push(KEY, indent, table.concat(key, ""), quote_type)
 				self.iter:skip_space()
 			else
@@ -1223,7 +1467,6 @@ function Lexer:map(indent)
 					end
 				elseif self.iter:match(" -") then -- TODO: this is unchecked
 					error("unreachable") -- TODO
-					-- table.insert(self.tokens, { kind = MAP_END, indent = indent })
 					self:push(MAP_END, indent, nil)
 					return OK
 				else
@@ -1390,12 +1633,12 @@ function Lexer:block_node(indent, floating)
 			self:push(CHARS, next_indent, folded, "folded")
 			print("after folded: " .. self.iter.row .. ":" .. self.iter.col)
 			return OK
+		elseif self.iter:match("?") then
+			res, mes = self:complex(self.iter.col)
+			return res, mes
 		elseif self:is_key() then
 			print("block_node: is key")
 			res, mes = self:map(indent)
-			return res, mes
-		elseif self.iter:match("?") then
-			res, mes = self:complex(indent)
 			return res, mes
 		elseif self.iter:peek() == "'" or self.iter:peek() == '"' then
 			local quote = self.iter:peek()
@@ -1598,7 +1841,22 @@ function Lexer:__tostring()
 			anchor = nil
 			tag = nil
 		elseif t.kind == KEY then
-			if t.value == nil then -- TODOO is this needed?
+			if t.type == "literal" then
+				table.insert(
+					str,
+					string.format("=VAL %s|%s", (anchor and (ANCHOR .. anchor.value .. " ") or ""), escape(t.value))
+				)
+			elseif t.type == "folded" then
+				table.insert(
+					str,
+					string.format(
+						"=VAL %s%s>%s",
+						(anchor and (ANCHOR .. anchor.value .. " ") or ""),
+						(tag and (self:parse_tag(tag.value) .. " ") or ""),
+						escape(t.value)
+					)
+				)
+			elseif t.value == nil then -- TODOO is this needed?
 				table.insert(
 					str,
 					string.format(

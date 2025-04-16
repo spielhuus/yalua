@@ -109,4 +109,32 @@ plain: |
 		assert(lexer)
 		assert.are.same(expect, tostring(lexer))
 	end)
+
+	-- 	it("should lex scalar with question marks", function()
+	-- 		local doc = [[
+	-- yaml: question?mark
+	-- yodl: question ? mark
+	-- lufl: [question ? mark]
+	-- ]]
+	-- 		local iter = StringIterator:new(doc)
+	-- 		local lexer = Lexer:new(iter)
+	-- 		local expect = [[
+	-- +STR
+	-- +DOC
+	-- +MAP
+	-- =VAL :yaml
+	-- =VAL :question?mark
+	-- =VAL :yodl
+	-- =VAL :question ? mark
+	-- =VAL :lufl
+	-- +SEQ []
+	-- =VAL :question ? mark
+	-- -SEQ
+	-- -MAP
+	-- -DOC
+	-- -STR
+	-- ]]
+	-- 		assert(lexer)
+	-- 		assert.are.same(expect, tostring(lexer))
+	-- 	end)
 end)

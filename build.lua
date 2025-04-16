@@ -70,6 +70,7 @@ end
 local function prefix_hash(str)
 	local words = {}
 	for word in str:gmatch("%S+") do
+		word = word:gsub("-", "_")
 		table.insert(words, "#" .. word)
 	end
 	return table.concat(words, " ")
@@ -194,7 +195,7 @@ end
 local function coverage()
 	print("[INFO] create the test coverage.")
 	prepare_suite()
-	if os.execute(CMD_LUAROCKS .. "test spec/suite/tree_spec.lua -- -c") ~= 0 then
+	if os.execute(CMD_LUAROCKS .. "test spec/ -- -c") ~= 0 then
 		print("[ERROR] Test coverage did not run successfully")
 	end
 	if os.execute("luacov -r lcov") ~= 0 then
@@ -230,7 +231,7 @@ end
 
 local function test()
 	clone_test_suite()
-	if os.execute(CMD_LUAROCKS .. "test spec/test") ~= 0 then
+	if os.execute(CMD_LUAROCKS .. " test spec/test -- --defer-print") ~= 0 then
 		error("Tests did not run successfully")
 	end
 end

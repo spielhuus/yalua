@@ -340,4 +340,52 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 		local lexer = Lexer:new(iter)
 		assert.is.Same(expect, tostring(lexer))
 	end)
+
+	it("should handle complex key with empty value", function()
+		local doc = [[
+[
+? foo
+    bar  baz
+]
+]]
+		local expect = [[
++STR
++DOC
++SEQ []
++MAP {}
+=VAL :foo bar  baz
+=VAL :
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
+
+	it("should handle complex multiline key", function()
+		local doc = [[
+[
+? foo
+    bar:  baz
+]
+]]
+		local expect = [[
++STR
++DOC
++SEQ []
++MAP {}
+=VAL :foo bar
+=VAL :baz
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
 end)
