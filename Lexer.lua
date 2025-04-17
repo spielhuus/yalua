@@ -1,11 +1,47 @@
--- function print() end
-local trim = require("str").trim
-local rtrim = require("str").rtrim
-local ltrim = require("str").ltrim
+-- local trim = require("str").trim
+-- local rtrim = require("str").rtrim
+-- local ltrim = require("str").ltrim
 
 local Lexer = {}
 
-local function print(...) end
+-- local function print(...) end
+
+local function ltrim(s, spaces_only)
+	while #s > 0 do
+		local char = string.sub(s, 1, 1)
+		if char == " " then
+			s = string.sub(s, 2, #s)
+		elseif not spaces_only and char == "\t" then
+			s = string.sub(s, 2, #s)
+		else
+			break
+		end
+	end
+	return s
+end
+
+local function rtrim(s, spaces_only)
+	while #s > 0 do
+		local char = string.sub(s, #s, #s)
+		-- print("'" .. escape(string.sub(s, #s - 2, #s - 1)) .. "'")
+		if char == " " then
+			s = string.sub(s, 1, #s - 1)
+		elseif not spaces_only and char == "\t" then
+			if string.sub(s, #s - 1, #s - 1) == "\\" then
+				print("escaped")
+				break
+			end
+			s = string.sub(s, 1, #s - 1)
+		else
+			break
+		end
+	end
+	return s
+end
+
+local function trim(s, spaces_only)
+	return rtrim(ltrim(s, spaces_only), spaces_only)
+end
 
 -- According to YAML 1.2 Specification, Section 5.7 Escape Characters
 -- These are the characters that can follow a backslash `\` within
@@ -45,6 +81,8 @@ local ANCHOR = "&"
 local STRIP = "-"
 local CLIP = ""
 local KEEP = "+"
+local SINGLE_QUOTE = "'"
+local DOUBLE_QUOTE = '"'
 local OK = 0
 local ERR = 1
 
@@ -60,7 +98,6 @@ local ERR = 1
 
 ---escape the backslashes
 local function escape(str)
-	print("escape: " .. str)
 	if type(str) == "number" then
 		return str
 	end
@@ -241,17 +278,17 @@ function Lexer:is_key()
 	if self.iter:match("[") or self.iter:match("{") then
 		return false
 	-- skip quoted text
-	elseif self.iter:match("'", index) then
+	elseif self.iter:match(SINGLE_QUOTE, index) then
 		index = index + 1
-		while self.iter:peek(index) and self.iter:match("'", index) do
+		while self.iter:peek(index) and self.iter:match(SINGLE_QUOTE, index) do
 			if self.iter:match("\\", index) then
 				index = index + 2
 			end
 			index = index + 1
 		end
-	elseif self.iter:match('"', index) then
+	elseif self.iter:match(DOUBLE_QUOTE, index) then
 		index = index + 1
-		while self.iter:peek(index) and self.iter:match("'", index) do
+		while self.iter:peek(index) and self.iter:match(DOUBLE_QUOTE, index) do
 			if self.iter:match("\\", index) then
 				index = index + 2
 			end
@@ -345,15 +382,13 @@ function Lexer:check_escaped(str)
 				end
 				i = i + 8 -- Skip the eight hex digits
 			elseif not self:is_valid_simple_escape_char(escaped_char, ESCAPED) then
-				-- Check against the list of valid single-character escapes
-				return nil, "Invalid escape sequence '\\" .. escaped_char .. "' at position " .. (i - 1)
+				if string.sub(str, i - 1, i) ~= "\\\t" then
+					-- Check against the list of valid single-character escapes
+					return nil, "Invalid escape sequence '\\" .. escape(escaped_char) .. "' at position " .. (i - 1)
+				end
 			end
-			-- If it was a valid simple escape (e.g., \n, \t, \\, \"),
-			-- 'i' now points to the character *after* the escaped character.
-			-- The main loop increment will move past it.
 		end
-
-		i = i + 1 -- Move to the next character
+		i = i + 1
 	end
 
 	-- If we finished the loop without finding errors
@@ -384,6 +419,12 @@ function Lexer:value(str)
 			end
 		end)
 	end
+	return str
+end
+
+function Lexer:unescape(str)
+	str = string.gsub(str, "\\\t", "\t")
+	str = string.gsub(str, "\\/", "/")
 	return str
 end
 
@@ -609,10 +650,16 @@ function Lexer:scalar(indent, floating)
 		if not lines then
 			return ERR, mes
 		end
-		for _, line in ipairs(lines) do
+		print("lines: " .. require("str").to_string(lines))
+		for i, line in ipairs(lines) do
 			if line ~= "" then
-				print("add line '" .. string.sub(line, indent) .. "'")
-				txt = txt .. " " .. line
+				if string.sub(txt, #txt) == NL then
+					txt = txt .. line
+				else
+					txt = txt .. " " .. line
+				end
+			elseif i < #lines then
+				txt = txt .. NL
 			end
 		end
 		self.iter:rewind(1)
@@ -651,8 +698,10 @@ function Lexer:scalar_lines(indent)
 	return lines
 end
 
----@return table
+---@return table|nil
+---@return string|nil
 function Lexer:quoted()
+	print("consume quoted")
 	local lines = {}
 	local quote = self.iter:next()
 	local chars = {}
@@ -667,9 +716,16 @@ function Lexer:quoted()
 			end
 		elseif self.iter:peek() == NL then
 			self.iter:next()
+			if self.iter:match("...") or self.iter:match("---") then
+				if self.iter:peek(4) == " " or self.iter:peek(4) == NL then
+					return nil, self:error("invalid document-end marker in quoted scalar")
+				end
+			end
+			self.iter:skip_space()
 			table.insert(lines, table.concat(chars, ""))
 			chars = {}
-		elseif self.iter:peek() == "\\" then
+		elseif quote == DOUBLE_QUOTE and self.iter:peek() == "\\" then
+			print("found backslash next is '" .. self.iter:peek(2) .. "'")
 			local bslash = self.iter:next()
 			if self.iter:peek() == NL then
 				self.iter:next()
@@ -678,6 +734,13 @@ function Lexer:quoted()
 			elseif self.iter:peek() == "n" then
 				self.iter:next()
 				table.insert(chars, NL)
+			elseif self.iter:peek() == "t" then
+				self.iter:next()
+				table.insert(chars, "\\")
+				table.insert(chars, "\t")
+			elseif self.iter:peek() == "\\" then
+				self.iter:next()
+				table.insert(chars, "\\")
 			else
 				table.insert(chars, bslash)
 				table.insert(chars, self.iter:next())
@@ -691,9 +754,13 @@ function Lexer:quoted()
 	local txt
 	local after_nl = false
 
+	if self.iter:eof() then
+		return nil, self:error("missing closing quote")
+	end
+
 	local function is_empty(l)
 		local pos = 1
-		while pos < #l do
+		while pos <= #l do
 			if string.sub(l, pos + 1, pos + 1) ~= " " and string.sub(l, pos + 1, pos + 1) ~= "\t" then
 				return false
 			end
@@ -707,11 +774,13 @@ function Lexer:quoted()
 		print("quoted: " .. tostring(after_nl) .. " " .. require("str").to_string(escape(line)))
 		if not txt then
 			print("insert first line: '" .. rtrim(line, true) .. "'")
-			txt = rtrim(line, true)
+			txt = rtrim(line, false)
 		elseif is_empty(line) then
-			print("found empty line")
+			print("found empty line: last: " .. string.sub(txt, #txt))
 			if i == #lines then
-				txt = txt .. " "
+				if string.sub(txt, #txt) ~= NL then
+					txt = txt .. " "
+				end
 			else
 				txt = txt .. NL
 			end
@@ -720,12 +789,15 @@ function Lexer:quoted()
 			if string.sub(txt, #txt) == NL then
 				txt = txt .. trim(line)
 			elseif #lines == i then
-				txt = txt .. " " .. ltrim(line)
+				txt = txt .. " " .. ltrim(line, true)
 			else
 				txt = txt .. " " .. trim(line)
 			end
 		end
 		print("='" .. escape(txt) .. "'")
+	end
+	if quote == DOUBLE_QUOTE then
+		txt = self:unescape(txt)
 	end
 	local arr = {} -- TODO: is it neccessary to create an array from the string
 	for char in txt:gmatch(".") do
@@ -1126,11 +1198,15 @@ function Lexer:flow_seq(indent)
 			chars_type = nil
 			chars = nil
 			self:push("-MAP", 0, nil)
-		elseif self.iter:match(" #") then
+		elseif self:is_comment() then
 			self:comment()
-		elseif self.iter:peek() == "'" or self.iter:peek() == '"' then
+		elseif self.iter:peek() == SINGLE_QUOTE or self.iter:peek() == DOUBLE_QUOTE then
 			chars_type = self.iter:peek()
-			chars = self:quoted()
+			local txt, mes = self:quoted()
+			if not txt then
+				return ERR, mes
+			end
+			chars = txt
 			self.iter:skip_space()
 		elseif self.iter:match("? ") then
 			self:flow_complex_key(indent, "]")
@@ -1142,6 +1218,12 @@ function Lexer:flow_seq(indent)
 			end
 		else
 			if chars then
+				print("++ " .. escape(self.iter:peek()))
+				if self.iter:match(NL) then
+					print("found nl")
+					self.iter:next()
+					self.iter:skip_scape()
+				end
 				table.insert(chars, self.iter:next())
 			else
 				self.iter:next()
@@ -1234,9 +1316,13 @@ function Lexer:flow_map(indent)
 					self.iter:skip_space()
 				end
 			end
-		elseif self.iter:match('"') or self.iter:match("'") then
+		elseif self.iter:match(DOUBLE_QUOTE) or self.iter:match(SINGLE_QUOTE) then
 			char_type = self.iter:peek()
-			chars = self:quoted()
+			local txt, mes = self:quoted()
+			if not txt then
+				return ERR, mes
+			end
+			chars = txt
 		elseif self.iter:match(ANCHOR) then
 			self:anchor(indent)
 			self.iter:skip_space()
@@ -1253,6 +1339,7 @@ function Lexer:flow_map(indent)
 			if self.iter:peek() == NL then
 				table.insert(chars, " ")
 				self.iter:next()
+				self.iter:skip_space()
 			else
 				table.insert(chars, self.iter:next())
 			end
@@ -1290,9 +1377,12 @@ function Lexer:complex_value(indent, is_key)
 			self:push(CHARS, indent, val, "literal")
 		end
 		self.iter:next()
-	elseif self.iter:match("'") or self.iter:match('"') then
+	elseif self.iter:match(SINGLE_QUOTE) or self.iter:match(DOUBLE_QUOTE) then
 		local quote = self.iter:peek()
-		local txt = self:quoted()
+		local txt, mes = self:quoted()
+		if not txt then
+			return ERR, mes
+		end
 		self:push(CHARS, indent, table.concat(txt, ""), quote)
 	elseif self.iter:match(">") then
 		self:folded(indent)
@@ -1431,9 +1521,13 @@ function Lexer:map(indent)
 			if self.iter:peek() == "[" or self.iter:peek() == "{" then
 				error("this is unreachable")
 				self:flow(indent)
-			elseif self.iter:peek() == '"' or self.iter:peek() == "'" then
+			elseif self.iter:peek() == DOUBLE_QUOTE or self.iter:peek() == SINGLE_QUOTE then
 				local quote_type = self.iter:peek()
-				key = self:quoted()
+				local txt, mes = self:quoted()
+				if not txt then
+					return ERR, mes
+				end
+				key = txt
 				print("quoted KEY: '" .. table.concat(key, "") .. "'")
 				self:push(KEY, indent, table.concat(key, ""), quote_type)
 				self.iter:skip_space()
@@ -1649,10 +1743,15 @@ function Lexer:block_node(indent, floating)
 			print("block_node: is key")
 			res, mes = self:map(indent)
 			return res, mes
-		elseif self.iter:peek() == "'" or self.iter:peek() == '"' then
+		elseif self.iter:peek() == SINGLE_QUOTE or self.iter:peek() == DOUBLE_QUOTE then
 			local quote = self.iter:peek()
-			local quoted = table.concat(self:quoted(), "")
-			if quote == '"' then
+			local txt
+			txt, mes = self:quoted()
+			if not txt then
+				return ERR, mes
+			end
+			local quoted = table.concat(txt, "")
+			if quote == DOUBLE_QUOTE then
 				res, mes = self:check_escaped(quoted)
 				if not res then
 					return ERR, mes
@@ -1881,7 +1980,7 @@ function Lexer:__tostring()
 						(anchor and (ANCHOR .. anchor.value .. " ") or ""),
 						(tag and (self:parse_tag(tag.value) .. " ") or ""),
 						(t.type and t.type or ":"),
-						escape(trim(t.value))
+						escape(trim(t.value)) -- TODO shall not trim here
 					)
 				)
 			end
