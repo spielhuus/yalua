@@ -133,10 +133,10 @@ local function spec_tree(data)
 						tags
 					)
 				)
-				-- table.insert(
-				-- 	result,
-				-- 	string.format('    print("### should parse the %s, file: %s")', escape(name), file)
-				-- )
+				table.insert(
+					result,
+					string.format('    print("### should parse the %s, file: %s")', escape(name), file)
+				)
 				table.insert(result, string.format('    local input = load_file("%s")', file))
 				if fail then
 					table.insert(result, string.format("    local result = yalua.stream(input)"))

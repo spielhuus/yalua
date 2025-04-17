@@ -5,7 +5,7 @@ local ltrim = require("str").ltrim
 
 local Lexer = {}
 
--- local function print(...) end
+local function print(...) end
 
 -- According to YAML 1.2 Specification, Section 5.7 Escape Characters
 -- These are the characters that can follow a backslash `\` within
@@ -60,6 +60,7 @@ local ERR = 1
 
 ---escape the backslashes
 local function escape(str)
+	print("escape: " .. str)
 	if type(str) == "number" then
 		return str
 	end
@@ -237,31 +238,33 @@ end
 
 function Lexer:is_key()
 	local index = 1
-	while self.iter:peek(index) and self.iter:peek(index) ~= NL do
-		if self.iter:peek(index) == '"' or self.iter:peek(index) == "'" then
-			local quote = self.iter:peek(index)
-			index = index + 1
-			local found_quote = false
-			while not found_quote and self.iter:peek(index) and self.iter:peek(index) ~= NL do
-				if self.iter:peek(index) == quote then
-					found_quote = true
-					index = index + 1
-					break
-				elseif self.iter:peek(index) == "\\" then
-					index = index + 2
-				end
-				index = index + 1
+	if self.iter:match("[") or self.iter:match("{") then
+		return false
+	-- skip quoted text
+	elseif self.iter:match("'", index) then
+		index = index + 1
+		while self.iter:peek(index) and self.iter:match("'", index) do
+			if self.iter:match("\\", index) then
+				index = index + 2
 			end
-			if not found_quote then
-				return false
-			end
-		elseif self.iter:match("[", index) or self.iter:match("{", index) then
-			return false
-		elseif self.iter:match(": ", index) or self.iter:match(":\t", index) or self.iter:match(":\n", index) then
-			return true
-		else
 			index = index + 1
 		end
+	elseif self.iter:match('"', index) then
+		index = index + 1
+		while self.iter:peek(index) and self.iter:match("'", index) do
+			if self.iter:match("\\", index) then
+				index = index + 2
+			end
+			index = index + 1
+		end
+	end
+	while self.iter:peek(index) and not self.iter:match(NL, index) do
+		if self.iter:match(": ", index) or self.iter:match(":\n", index) or self.iter:match(":\t", index) then
+			return true
+		elseif self.iter:match(" [", index) or self.iter:match(" {", index) then -- TODO: three tests failing beacause of space
+			return false
+		end
+		index = index + 1
 	end
 	return false
 end
@@ -561,6 +564,8 @@ function Lexer:scalar(indent, floating)
 					break
 				end
 				chars = {}
+			elseif self.iter:match(": ") or self.iter:match(":\n") then
+				return ERR, self:error("multiline Key is not allowed")
 			else
 				table.insert(chars, self.iter:next())
 			end
@@ -744,6 +749,9 @@ function Lexer:folded_attrs()
 			self.iter:next()
 		elseif tonumber(self.iter:peek()) then
 			indent = tonumber(self.iter:peek()) or 0
+			if indent < 1 then
+				return nil, self:error("indentation indicator: '" .. indent .. "'")
+			end
 			self.iter:next()
 		elseif self:is_comment() then
 			self:comment()
@@ -1391,11 +1399,11 @@ function Lexer:map(indent)
 	local mes
 	while not self.iter:eof() do
 		print("cMap " .. self.iter:peek())
-		if self.iter:match("-") then
+		if self.iter:match("- ") then
 			self.iter:rewind(1)
 			self:push(MAP_END, indent, nil)
 			return OK
-		elseif self.iter:match("?") then
+		elseif self.iter:match("? ") then
 			res, mes = self:complex(indent) -- TODO can this also be in block_node
 		elseif (self.iter:match("[") or self.iter:match("{")) and self:flow_is_key() then
 			print("flow key")
@@ -1430,7 +1438,8 @@ function Lexer:map(indent)
 				self:push(KEY, indent, table.concat(key, ""), quote_type)
 				self.iter:skip_space()
 			else
-				while self.iter:peek() ~= ":" do
+				-- while not self.iter:match(": ") and not self.iter:match(":\n") do
+				while not self.iter:match(": ") and not self.iter:match(":\n") and not self.iter:match(":\t") do
 					table.insert(key, self.iter:next())
 				end
 				print("KEY: '" .. table.concat(key, "") .. "'")
@@ -1763,7 +1772,6 @@ function Lexer:stream()
 				if self.tokens[#self.tokens].kind == "+DOC" then
 					table.insert(self.tokens, { kind = CHARS, indent = 0, value = "" })
 				end
-				print("stream end doc '" .. (self.iter:peek() or "eof") .. "'")
 				table.insert(self.tokens, { kind = "-DOC", indent = 0 })
 			end
 		end
@@ -1873,7 +1881,7 @@ function Lexer:__tostring()
 						(anchor and (ANCHOR .. anchor.value .. " ") or ""),
 						(tag and (self:parse_tag(tag.value) .. " ") or ""),
 						(t.type and t.type or ":"),
-						trim(t.value)
+						escape(trim(t.value))
 					)
 				)
 			end
