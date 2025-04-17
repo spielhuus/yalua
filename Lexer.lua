@@ -298,7 +298,7 @@ function Lexer:is_key()
 	while self.iter:peek(index) and not self.iter:match(NL, index) do
 		if self.iter:match(": ", index) or self.iter:match(":\n", index) or self.iter:match(":\t", index) then
 			return true
-		elseif self.iter:match(" [", index) or self.iter:match(" {", index) then -- TODO: three tests failing beacause of space
+		elseif self.iter:match(" [", index) or self.iter:match(" {", index) then
 			return false
 		end
 		index = index + 1
@@ -1523,7 +1523,8 @@ function Lexer:map(indent)
 				self:flow(indent)
 			elseif self.iter:peek() == DOUBLE_QUOTE or self.iter:peek() == SINGLE_QUOTE then
 				local quote_type = self.iter:peek()
-				local txt, mes = self:quoted()
+				local txt
+				txt, mes = self:quoted()
 				if not txt then
 					return ERR, mes
 				end
