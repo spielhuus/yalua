@@ -1,10 +1,10 @@
--- local trim = require("str").trim
--- local rtrim = require("str").rtrim
--- local ltrim = require("str").ltrim
-
 local Lexer = {}
 
 -- local function print(...) end
+
+-----------------------------------------------------------------------------------------
+---                               String Utilities                                    ---
+-----------------------------------------------------------------------------------------
 
 local function ltrim(s, spaces_only)
 	while #s > 0 do
@@ -23,12 +23,10 @@ end
 local function rtrim(s, spaces_only)
 	while #s > 0 do
 		local char = string.sub(s, #s, #s)
-		-- print("'" .. escape(string.sub(s, #s - 2, #s - 1)) .. "'")
 		if char == " " then
 			s = string.sub(s, 1, #s - 1)
 		elseif not spaces_only and char == "\t" then
 			if string.sub(s, #s - 1, #s - 1) == "\\" then
-				print("escaped")
 				break
 			end
 			s = string.sub(s, 1, #s - 1)
@@ -41,6 +39,14 @@ end
 
 local function trim(s, spaces_only)
 	return rtrim(ltrim(s, spaces_only), spaces_only)
+end
+
+---escape the backslashes
+local function escape(str)
+	if type(str) == "number" then
+		return str
+	end
+	return (str:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\b", "\\b"):gsub("\t", "\\t"))
 end
 
 -- According to YAML 1.2 Specification, Section 5.7 Escape Characters
@@ -96,14 +102,6 @@ local ERR = 1
 -- 	return res
 -- end
 
----escape the backslashes
-local function escape(str)
-	if type(str) == "number" then
-		return str
-	end
-	return (str:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\b", "\\b"):gsub("\t", "\\t"))
-end
-
 local function utf8(codepoint)
 	if codepoint <= 0x7F then
 		return string.char(codepoint)
@@ -123,6 +121,10 @@ local function url_decode(str)
 	return str
 end
 
+-----------------------------------------------------------------------------------------
+---                                The Yaml Lexer                                     ---
+-----------------------------------------------------------------------------------------
+
 function Lexer:new(iter)
 	local o = {}
 	self.__index = self
@@ -134,7 +136,6 @@ function Lexer:new(iter)
 	o.named_tag = {}
 	local res, mes = o:lexme()
 	if res ~= 0 then
-		-- print(mes)
 		return nil, mes
 	else
 		return o
@@ -163,6 +164,9 @@ end
 function Lexer:indent()
 	local i = 0
 	while self.iter:peek(i + 1) == " " do
+		if self.iter:peek(i + 1) == "\t" then
+			error("tab is not allowed as indentation character.")
+		end
 		i = i + 1
 	end
 	return i
@@ -178,6 +182,9 @@ function Lexer:next_indent()
 	i = i + 1
 	local j = 0
 	while self.iter:peek(i) and self.iter:peek(i) == " " do
+		if self.iter:peek(i) == "\t" then
+			error("tab is not allowed as indentation character.")
+		end
 		i = i + 1
 		j = j + 1
 	end
@@ -428,6 +435,42 @@ function Lexer:unescape(str)
 	return str
 end
 
+function Lexer:new_is_comment()
+	if self.iter.col == 0 and self.iter:match("#") then
+		return true
+	end
+	local index = 1
+	while self.iter:peek(index) and not self.iter:match(NL, index) do
+		if self.iter:match(" #", index) then
+			return true
+		elseif self.iter:match(" ", index) then
+			index = index + 1
+		else
+			return false
+		end
+	end
+	return false
+end
+
+function Lexer:skip_space_or_comment()
+	if self.iter.col == 0 and self.iter:match("#") then
+		while not self.iter:eof() and not self.iter:match(NL) do
+			self.iter:next()
+		end
+	end
+	while not self.iter:eof() and not self.iter:match(NL) do
+		if self.iter:match(" #") then
+			while not self.iter:eof() and not self.iter:match(NL) do
+				self.iter:next()
+			end
+		elseif self.iter:match(" ") or self.iter:match("\t") then
+			self.iter:next()
+		else
+			break
+		end
+	end
+end
+
 ---Test if line is a comment comment
 ---skips all white spaces until a comment is found
 ---@return boolean
@@ -518,7 +561,7 @@ end
 ---@param indent integer The content indentation level.
 ---@return table|nil
 ---@return string|nil
-function Lexer:block_indent(indent, hint, floating)
+function Lexer:block_indent(indent, hint, floating, scalar_type)
 	print(
 		"block_indent: indent:"
 			.. (indent or "nil")
@@ -551,7 +594,11 @@ function Lexer:block_indent(indent, hint, floating)
 			--read the line
 			local chars = {}
 			while not self.iter:eof() and not self.iter:eol() do
-				table.insert(chars, self.iter:next())
+				if scalar_type == "PLAIN" and self:new_is_comment() then
+					self:skip_space_or_comment()
+				else
+					table.insert(chars, self.iter:next())
+				end
 			end
 			table.insert(lines, table.concat(chars, ""))
 			self.iter:next()
@@ -605,6 +652,8 @@ function Lexer:scalar(indent, floating)
 					break
 				end
 				chars = {}
+			elseif self.iter:match("# ") then
+				error("found comment")
 			elseif self.iter:match(": ") or self.iter:match(":\n") then
 				return ERR, self:error("multiline Key is not allowed")
 			else
@@ -627,7 +676,7 @@ function Lexer:scalar(indent, floating)
 	local txt = trim(table.concat(chars, ""))
 	if floating and self:next_indent() >= indent then
 		self.iter:next()
-		local lines, mes = self:block_indent(indent, nil, floating)
+		local lines, mes = self:block_indent(indent, nil, floating, "PLAIN")
 		if not lines then
 			return ERR, mes
 		end
@@ -646,7 +695,7 @@ function Lexer:scalar(indent, floating)
 			self.iter:skip_space()
 			return ERR, self:error("invalid multiline plain key")
 		end
-		local lines, mes = self:block_indent(indent, nil, floating)
+		local lines, mes = self:block_indent(indent, nil, floating, "PLAIN")
 		if not lines then
 			return ERR, mes
 		end
@@ -996,7 +1045,7 @@ function Lexer:tag_anchor_alias(indent)
 		else
 			found = false
 		end
-		self.iter:skip_space()
+		-- self.iter:skip_space()
 	end
 	return last_found
 end
@@ -1009,13 +1058,12 @@ function Lexer:alias(indent)
 		table.insert(alias, self.iter:next())
 	end
 	self:push(ALIAS, indent, table.concat(alias, ""))
-	if self.iter:match(" #") then
+	if self.iter:match(" #") then -- TODO remove
 		self:comment()
 	end
 end
 
 function Lexer:anchor(indent)
-	assert(indent)
 	self.iter:next()
 	local anchor = {}
 	while self.iter:peek() ~= " " and self.iter:peek() ~= NL do
@@ -1422,20 +1470,29 @@ function Lexer:complex(indent)
 	local res = OK
 	local mes = nil
 	assert(self.iter:match("?"))
-	self:push(MAP_START, indent, nil)
 	while not self.iter:eof() do
 		if self.iter:match("? ") then
 			self.iter:next(1)
-			self.iter:skip_space()
-			self:complex_value(indent, true)
-			self.iter:skip_space()
-			if self:is_comment() then
-				self:comment()
+			self:skip_space_or_comment()
+			if self.iter:match(NL) then
 				self.iter:next()
+				self:skip_space_or_comment()
+			end
+			print("complex before key: " .. self.iter:peek())
+			self:complex_value(indent, true)
+			self:skip_space_or_comment()
+			if self.iter:match(NL) then
+				self.iter:next()
+				self:skip_space_or_comment()
 			end
 			print("get value: '" .. (self.iter:peek() or "eof") .. "'")
 			if self.iter:match(":") then
 				self.iter:next(1)
+				self:skip_space_or_comment()
+				if self.iter:match(NL) then
+					self.iter:next()
+					self:skip_space_or_comment()
+				end
 				if self.iter:match(NL) then
 					self.iter:next()
 					assert(self:indent() > indent)
@@ -1443,11 +1500,10 @@ function Lexer:complex(indent)
 				self.iter:skip_space()
 				self:complex_value(indent, false)
 			else
-				print("push emtty")
 				self:push(CHARS, indent, "")
 			end
+			return OK
 		elseif self.iter:match(NL) then
-			print("complex newline")
 			if self:next_indent() < indent then
 				break
 			end
@@ -1476,144 +1532,225 @@ function Lexer:complex(indent)
 			error("unreachable @" .. self.iter.row .. ":" .. self.iter.col)
 		end
 	end
-	self:push(MAP_END, indent, nil)
-
 	return res, mes
 end
 
 function Lexer:map(indent)
 	print("+MAP " .. indent)
 	self:push(MAP_START, indent, nil)
-	local chars = {}
 	local res = OK
 	local mes
 	while not self.iter:eof() do
-		print("cMap " .. self.iter:peek())
-		if self.iter:match("- ") then
-			self.iter:rewind(1)
-			self:push(MAP_END, indent, nil)
-			return OK
-		elseif self.iter:match("? ") then
-			res, mes = self:complex(indent) -- TODO can this also be in block_node
-		elseif (self.iter:match("[") or self.iter:match("{")) and self:flow_is_key() then
-			print("flow key")
-			res, mes = self:flow(indent)
-			self.iter:next()
-			if self.iter:peek() == NL then
-				self.iter:next()
-				local next_indent = self:indent()
-				self.iter:skip_space()
-				print("character after nl " .. (self.iter:peek() or "eof"))
-				if self.iter:peek() == "#" then
-					self:comment()
-					next_indent = self:next_indent()
-					self.iter:next(next_indent + 1)
-				else
-					error("not implemented")
-				end
-				res, mes = self:block_node(next_indent, true)
-			end
-			chars = nil
-		elseif self:is_key() then
-			print("found key")
+		if self:is_key() or self:flow_is_key() then
 			self:tag_anchor_alias(indent)
 			local key = {}
-			if self.iter:peek() == "[" or self.iter:peek() == "{" then
-				error("this is unreachable")
-				self:flow(indent)
-			elseif self.iter:peek() == DOUBLE_QUOTE or self.iter:peek() == SINGLE_QUOTE then
-				local quote_type = self.iter:peek()
-				local txt
-				txt, mes = self:quoted()
-				if not txt then
-					return ERR, mes
+			if self.iter:match(DOUBLE_QUOTE) or self.iter:match(SINGLE_QUOTE) then
+				local quote = self.iter:peek()
+				local quoted_key, message = self:quoted()
+				if not quoted_key then
+					return quoted_key, message
 				end
-				key = txt
-				print("quoted KEY: '" .. table.concat(key, "") .. "'")
-				self:push(KEY, indent, table.concat(key, ""), quote_type)
-				self.iter:skip_space()
+				print("KEY: '" .. table.concat(key, "") .. "'")
+				self:push(KEY, indent, table.concat(quoted_key), quote)
+				self:skip_space_or_comment()
+				self.iter:next()
+			elseif self.iter:match("[") or self.iter:match("{") then
+				self:flow(self.iter.col)
 			else
-				-- while not self.iter:match(": ") and not self.iter:match(":\n") do
 				while not self.iter:match(": ") and not self.iter:match(":\n") and not self.iter:match(":\t") do
 					table.insert(key, self.iter:next())
 				end
 				print("KEY: '" .. table.concat(key, "") .. "'")
 				self:push(KEY, indent, table.concat(key, ""))
 			end
-			self.iter:next()
-			self.iter:skip_space()
-			-- test for nested key
-			if self:is_key() then
-				return ERR, self:error("invalid nested block mapping on the same line")
-			end
-			print("map next char: " .. (self.iter:peek() or "eof"))
+			self.iter:next(1)
+			-- consume the value
+			self:skip_space_or_comment()
 			if self:tag_anchor_alias(indent) ~= ALIAS then
-				if self.iter:peek() == NL then
+				if self.iter:match(NL) then
+					print("map value on new line")
 					self.iter:next()
-					local next_indent = self:indent()
-					self.iter:skip_space()
-					print("character after nl " .. (self.iter:peek() or "eof"))
-					if self.iter:peek() == "#" then
-						self:comment()
-						next_indent = self:next_indent()
-						self.iter:next(next_indent + 1)
+					while self:is_comment() do
+						self:skip_space_or_comment()
+						self.iter:next()
 					end
-					res, mes = self:block_node(next_indent, true)
-				elseif self.iter:peek() == "#" then
-					self:comment()
-					local next_indent = self:next_indent()
-					print("found comment:" .. next_indent)
-					self.iter:next(next_indent + 1)
-					if next_indent == indent and self:is_key() then
+					-- self:skip_space_or_comment()
+					-- if self.iter:match(NL) then
+					-- 	self.iter:next()
+					-- 	self:skip_space_or_comment()
+					-- end
+					local next_indent = self:indent()
+					if self.iter:eof() or (next_indent <= indent and self:is_key()) then
 						self:push(CHARS, indent, "")
 					else
+						self:skip_space_or_comment()
+						if self.iter:match(NL) then
+							self.iter:next()
+							self:skip_space_or_comment()
+						end
 						res, mes = self:block_node(next_indent, true)
 					end
-				elseif self.iter:match(" -") then -- TODO: this is unchecked
-					error("unreachable") -- TODO
-					self:push(MAP_END, indent, nil)
-					return OK
 				else
-					print("map: enter block node: " .. indent .. ":" .. self:next_indent())
-					res, mes = self:block_node(indent, false)
+					if self:is_key() then
+						return ERR, self:error("invalid nested block mapping on the same line")
+					end
+					res, mes = self:block_node(indent)
 				end
 			end
-			if not self.iter:eof() then
-				if self:next_indent() < indent then
-					self:push(MAP_END, indent, nil)
-					return OK
-				end
-			end
-		elseif self:is_comment() then
-			self:comment()
+			self:skip_space_or_comment()
+		elseif self.iter:match("?") then
+			self:complex(self.iter.col)
 		elseif self.iter:match("---") or self.iter:match("...") then
-			self:push(MAP_END, indent, nil)
-			return OK
-		elseif self.iter:peek() == NL then
-			print("MAP NL" .. self.iter.row)
-			self.iter:next()
-			if self:is_comment() then
-				self:comment()
-			end
-			if self:indent() < indent then
-				self:push(MAP_END, indent, nil)
-				print("return MAP")
-				return OK
-			elseif self:indent() > indent then
-				local next_indent = self:indent()
+			break
+		elseif self.iter:match(NL) then
+			print("MAP NL")
+			if self:next_indent() < indent then
+				print("end")
+				break
+			elseif self:next_indent() > indent then
+				local next_indent = self:next_indent()
+				self.iter:next()
 				self.iter:next(next_indent)
 				return ERR, self:error(string.format("Wrong indentation: should be %d but is %d", indent, next_indent))
 			end
-			self.chars = {}
-			self.iter:skip_space()
+			self.iter:next()
+			print("map after NL: " .. (self.iter:peek() or "nil"))
+			self:skip_space_or_comment()
 		else
-			table.insert(chars, self.iter:next())
+			return ERR, self:error("Invalid multiline key")
 		end
-		if res ~= OK then
-			self:push(MAP_END, indent, nil)
+		if res == ERR then
 			return res, mes
 		end
 	end
+	print("map end")
+	-- 	print("cMap " .. self.iter:peek())
+	-- 	if self.iter:match("- ") then
+	-- 		self.iter:rewind(1)
+	-- 		self:push(MAP_END, indent, nil)
+	-- 		return OK
+	-- 	elseif self.iter:match("? ") then
+	-- 		print("found complex key")
+	-- 		res, mes = self:complex(indent)
+	-- 	elseif (self.iter:match("[") or self.iter:match("{")) and self:flow_is_key() then
+	-- 		print("flow key")
+	-- 		res, mes = self:flow(indent)
+	-- 		self.iter:next()
+	-- 		if self.iter:peek() == NL then
+	-- 			self.iter:next()
+	-- 			local next_indent = self:indent()
+	-- 			self.iter:skip_space()
+	-- 			print("character after nl " .. (self.iter:peek() or "eof"))
+	-- 			if self.iter:peek() == "#" then
+	-- 				self:comment()
+	-- 				next_indent = self:next_indent()
+	-- 				self.iter:next(next_indent + 1)
+	-- 			else
+	-- 				error("not implemented")
+	-- 			end
+	-- 			res, mes = self:block_node(next_indent, true)
+	-- 		end
+	-- 		chars = nil
+	-- 	elseif self:is_key() then
+	-- 		print("found key")
+	-- 		self:tag_anchor_alias(indent)
+	-- 		local key = {}
+	-- 		if self.iter:peek() == "[" or self.iter:peek() == "{" then
+	-- 			error("this is unreachable")
+	-- 			self:flow(indent)
+	-- 		elseif self.iter:peek() == DOUBLE_QUOTE or self.iter:peek() == SINGLE_QUOTE then
+	-- 			local quote_type = self.iter:peek()
+	-- 			local txt
+	-- 			txt, mes = self:quoted()
+	-- 			if not txt then
+	-- 				return ERR, mes
+	-- 			end
+	-- 			key = txt
+	-- 			print("quoted KEY: '" .. table.concat(key, "") .. "'")
+	-- 			self:push(KEY, indent, table.concat(key, ""), quote_type)
+	-- 			self.iter:skip_space()
+	-- 		else
+	-- 			-- while not self.iter:match(": ") and not self.iter:match(":\n") do
+	-- 			while not self.iter:match(": ") and not self.iter:match(":\n") and not self.iter:match(":\t") do
+	-- 				table.insert(key, self.iter:next())
+	-- 			end
+	-- 			print("KEY: '" .. table.concat(key, "") .. "'")
+	-- 			self:push(KEY, indent, table.concat(key, ""))
+	-- 		end
+	-- 		self.iter:next()
+	-- 		self.iter:skip_space()
+	-- 		-- test for nested key
+	-- 		if self:is_key() then
+	-- 			return ERR, self:error("invalid nested block mapping on the same line")
+	-- 		end
+	-- 		print("map next char: " .. (self.iter:peek() or "eof"))
+	-- 		if self:tag_anchor_alias(indent) ~= ALIAS then
+	-- 			if self.iter:peek() == NL then
+	-- 				self.iter:next()
+	-- 				local next_indent = self:indent()
+	-- 				self.iter:skip_space()
+	-- 				print("character after nl " .. (self.iter:peek() or "eof"))
+	-- 				if self.iter:peek() == "#" then
+	-- 					self:comment()
+	-- 					next_indent = self:next_indent()
+	-- 					self.iter:next(next_indent + 1)
+	-- 				end
+	-- 				res, mes = self:block_node(next_indent, true)
+	-- 			elseif self.iter:peek() == "#" then
+	-- 				self:comment()
+	-- 				local next_indent = self:next_indent()
+	-- 				print("found comment:" .. next_indent)
+	-- 				self.iter:next(next_indent + 1)
+	-- 				if next_indent == indent and self:is_key() then
+	-- 					self:push(CHARS, indent, "")
+	-- 				else
+	-- 					res, mes = self:block_node(next_indent, true)
+	-- 				end
+	-- 			elseif self.iter:match(" -") then -- TODO: this is unchecked
+	-- 				error("unreachable") -- TODO
+	-- 				self:push(MAP_END, indent, nil)
+	-- 				return OK
+	-- 			else
+	-- 				print("map: enter block node: " .. indent .. ":" .. self:next_indent())
+	-- 				res, mes = self:block_node(indent, false)
+	-- 			end
+	-- 		end
+	-- 		if not self.iter:eof() then
+	-- 			if self:next_indent() < indent then
+	-- 				self:push(MAP_END, indent, nil)
+	-- 				return OK
+	-- 			end
+	-- 		end
+	-- 	elseif self:is_comment() then
+	-- 		self:comment()
+	-- 	elseif self.iter:match("---") or self.iter:match("...") then
+	-- 		self:push(MAP_END, indent, nil)
+	-- 		return OK
+	-- 	elseif self.iter:peek() == NL then
+	-- 		print("MAP NL" .. self.iter.row)
+	-- 		self.iter:next()
+	-- 		if self:is_comment() then
+	-- 			self:comment()
+	-- 		end
+	-- 		if self:indent() < indent then
+	-- 			self:push(MAP_END, indent, nil)
+	-- 			print("return MAP")
+	-- 			return OK
+	-- 		elseif self:indent() > indent then
+	-- 			local next_indent = self:indent()
+	-- 			self.iter:next(next_indent)
+	-- 			return ERR, self:error(string.format("Wrong indentation: should be %d but is %d", indent, next_indent))
+	-- 		end
+	-- 		self.chars = {}
+	-- 		self.iter:skip_space()
+	-- 	else
+	-- 		table.insert(chars, self.iter:next())
+	-- 	end
+	-- 	if res ~= OK then
+	-- 		self:push(MAP_END, indent, nil)
+	-- 		return res, mes
+	-- 	end
+	-- end
 	self:push(MAP_END, indent, nil)
 	return OK
 end
@@ -1624,7 +1761,7 @@ function Lexer:sequence(indent)
 	local res = OK
 	local mes
 	while not self.iter:eof() do
-		print("seq next entry " .. self.iter.row .. ":" .. self.iter.col)
+		print("seq next entry " .. self.iter.row .. ":" .. self.iter.col .. " => '" .. self.iter:peek() .. "'")
 		if self.iter:match("- ") or self.iter:match("-\t") or self.iter:match("-\n") then
 			self.iter:next()
 			self.iter:skip_space()
@@ -1638,28 +1775,44 @@ function Lexer:sequence(indent)
 				self:comment()
 			end
 			--is it an empty value
-			if self.iter:peek() == NL and (not self.iter:peek(2) or self:next_indent() == indent) then
-				self:push(CHARS, indent, "")
-			-- end
-			elseif self.iter:peek() == NL or self.iter:match("- ") or self.iter:match("-\t") then
-				local next_indent = self:next_indent()
-				if self.iter:peek() == NL then
-					self.iter:next()
+			local is_empty_val = false
+			if self.iter:match(ANCHOR) then
+				local index = 1
+				while self.iter:peek(index) and not self.iter:match(NL, index) do
+					if self.iter:match(" ", index) then
+						break
+					end
+					index = index + 1
 				end
-				self.iter:skip_space()
-				res, mes = self:block_node(next_indent, false)
-			elseif self:is_key() then
-				-- handle mapping on the same line
-				if self:next_indent() > indent then -- TODOO: could this also be col?
-					res, mes = self:block_node(self.iter.col, true)
+				if self.iter:peek(index) == NL and (not self.iter:peek(index + 2) or self:next_indent() == indent) then
+					self:anchor(indent)
+					self:push(CHARS, indent, "")
+					is_empty_val = true
+				end
+			end
+			if not is_empty_val then
+				if self.iter:peek() == NL and (not self.iter:peek(2) or self:next_indent() == indent) then
+					self:push(CHARS, indent, "")
+				elseif self.iter:peek() == NL or self.iter:match("- ") or self.iter:match("-\t") then
+					local next_indent = self:next_indent()
+					if self.iter:peek() == NL then
+						self.iter:next()
+					end
+					self.iter:skip_space()
+					res, mes = self:block_node(next_indent, false)
+				elseif self:is_key() then
+					-- handle mapping on the same line
+					if self:next_indent() > indent then
+						res, mes = self:block_node(self.iter.col, true)
+					else
+						res, mes = self:block_node(self.iter.col, false)
+					end
+				elseif self.iter:peek() == "!" then
+					error("tag")
+					self:tag(indent)
 				else
 					res, mes = self:block_node(indent, false)
 				end
-			elseif self.iter:peek() == "!" then
-				error("tag")
-				self:tag(indent)
-			else
-				res, mes = self:block_node(indent, false)
 			end
 		elseif self.iter:match("#") then
 			self:comment()
@@ -1667,6 +1820,7 @@ function Lexer:sequence(indent)
 			self:push(SEQ_END, indent, nil)
 			return OK
 		elseif self.iter:match(NL) then
+			print("sequence NL")
 			local next_indent = self:next_indent()
 			if next_indent < indent then
 				self:push(SEQ_END, indent, nil)
@@ -1698,14 +1852,10 @@ function Lexer:block_node(indent, floating)
 	if self:tag_anchor_alias(indent) == ALIAS then
 		return OK
 	end
-	if self.iter:peek() == NL then
+	self:skip_space_or_comment()
+	while not self.iter:eof() and self.iter:match(NL) do
 		self.iter:next()
-		self.iter:skip_space()
-	end
-	print("after tag_anchor_alias: '" .. (self.iter:peek() or "nil") .. "'")
-	if self:is_comment() then
-		self:comment()
-		self.iter:next()
+		self:skip_space_or_comment()
 	end
 	while not self.iter:eof() do
 		if self.iter:match("- ") or self.iter:match("-\t") or self.iter:match("-\n") then
@@ -1735,13 +1885,11 @@ function Lexer:block_node(indent, floating)
 				return folded, message
 			end
 			self:push(CHARS, next_indent, folded, "folded")
-			print("after folded: " .. self.iter.row .. ":" .. self.iter.col)
 			return OK
 		elseif self.iter:match("?") then
-			res, mes = self:complex(self.iter.col)
+			res, mes = self:map(self.iter.col)
 			return res, mes
 		elseif self:is_key() then
-			print("block_node: is key")
 			res, mes = self:map(indent)
 			return res, mes
 		elseif self.iter:peek() == SINGLE_QUOTE or self.iter:peek() == DOUBLE_QUOTE then

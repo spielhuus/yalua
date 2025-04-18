@@ -3,7 +3,7 @@ local Lexer = require("Lexer")
 local StringIterator = require("StringIterator")
 
 describe("Test the scalar types", function()
-	it("should #lex empty key in map", function()
+	it("should lex empty key in map", function()
 		local doc = [[
 strip: |-
   text
@@ -32,7 +32,7 @@ keep: |+
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex map with line #prefix", function()
+	it("should lex map with line prefix", function()
 		local doc = [[
 plain: text
   lines
@@ -84,7 +84,7 @@ plain: |
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex literal with yaml content and #special characters", function()
+	it("should lex literal with yaml content and special characters", function()
 		local doc = [[
 - yaml: |
     --- |1-∎

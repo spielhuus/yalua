@@ -200,7 +200,7 @@ seq: [ &a 1, 2, 3, { a: b, c: d }, 5, 6, 7 ]
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex map nested in sequence with anchors in #map", function()
+	it("should lex map nested in sequence with anchors in map", function()
 		local doc = [[
 seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 ]]

@@ -86,7 +86,7 @@ key: value
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a mapping #key", function()
+	it("should lex a mapping key", function()
 		local doc = [[
 "implicit block key": [
   "implicit flow key" : value,
@@ -514,7 +514,7 @@ k1: v1
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a sequence with map on new #line", function()
+	it("should lex a sequence with map on new line", function()
 		local doc = [[
  - key: value
    key2: value2
@@ -537,6 +537,147 @@ k1: v1
 =VAL :key3
 =VAL :value3
 -MAP
+-SEQ
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a map with anchors and comments", function()
+		local doc = [[
+a: "double
+  quotes" # lala
+b: plain
+ value  # lala
+c  : #lala
+  d
+e:
+ &node # lala
+ - x: y
+block: > # lala
+  abcde
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :a
+=VAL "double quotes
+=VAL :b
+=VAL :plain value
+=VAL :c
+=VAL :d
+=VAL :e
++SEQ &node
++MAP
+=VAL :x
+=VAL :y
+-MAP
+-SEQ
+=VAL :block
+=VAL >abcde\n
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a map with empty values", function()
+		local doc = [[
+key1: val1
+key2:
+key3:
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL :
+=VAL :key3
+=VAL :
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a map with empty values with anchor", function()
+		local doc = [[
+key1: val1
+key2: &a
+key3:
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL &a :
+=VAL :key3
+=VAL :
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a sequence with empty entries", function()
+		local doc = [[
+- val1
+- 
+- val3
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++SEQ
+=VAL :val1
+=VAL :
+=VAL :val3
+-SEQ
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex a sequence with #empty entries and anchor", function()
+		local doc = [[
+- val1
+- &a
+- val3
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++SEQ
+=VAL :val1
+=VAL &a :
+=VAL :val3
 -SEQ
 -DOC
 -STR
