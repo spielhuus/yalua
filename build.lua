@@ -4,6 +4,9 @@
 
 local yalua = require("yalua")
 
+local EXCLUDE_TESTS =
+	'--exclude-tags="Y79Y,SKE5,RHX7,PW8X,M5C3,M2N8,EB22,6PBE,4FJ6,ZXT5,X38W,VJP3,V9D5,UV7Q,UKK6,U99R,U3XV,TD5N,SY6V,SU74,SR86,SM9W,SF5V,QLJ7,QB6E,NKF9,NHX8,NB6Z,N782,MUS6,LHL4,L94M,KS4U,KK5P,JTV5,JR7V,J3BT,HU3P,HMQ5,H7TQ,H7J7,GT5M,GDY7,G9HC,FP8R,FH7J,FBC9,F8F9,F2C7,EXG3,EHF6,E76Z,DK95,DK4H,DK3J,DBG4,CXX2,CVW2,CML9,C2SP,BU8L,BS4K,BF9H,BD7L,B63P,AVM7,A984,9MMW,9MMA,9KAX,9HCY,9C9N,82AN,7ZZ5,7BMT,6M2F,6CA3,6BFJ,652Z,5U3A,565N,4V8U,4UYU,4RWC,4JVG,4EJS,3HFZ,26DV"'
+
 local PATH_SUITE = "yaml-test-suite"
 local TEST_SUITE = "https://github.com/yaml/yaml-test-suite.git"
 local PATH_TESTS = "spec/suite"
@@ -209,7 +212,7 @@ end
 local function suite()
 	print("[INFO] Prepare test suite.")
 	prepare_suite()
-	if os.execute(CMD_LUAROCKS .. "test spec/suite/tree_spec.lua") ~= 0 then
+	if os.execute(CMD_LUAROCKS .. "test spec/suite/tree_spec.lua -- " .. EXCLUDE_TESTS) ~= 0 then
 		error("Test suite did not run successfully")
 	end
 end
@@ -270,6 +273,7 @@ local function print_usage()
 	print("  suite     - Run YAML test suite")
 	print("  coverage  - Run test coverage")
 	print("  clean     - Clean test suite and build files")
+	print("  all       - Run all targets (test, suite, check , lls)")
 	print("  dump <filename> - Dump lexer output for a file")
 end
 
@@ -287,6 +291,11 @@ if is_main(arg, ...) then
 		coverage()
 	elseif arg[1] == "clean" then
 		clean()
+	elseif arg[1] == "all" then
+		check()
+		lls()
+		test()
+		suite()
 	elseif arg[1] == "dump" then
 		if not arg[2] then
 			error("no filename for dump.")

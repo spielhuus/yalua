@@ -76,6 +76,8 @@ local ESCAPED = {
 }
 
 local NL = "\n"
+local START_DOC = "---"
+local END_DOC = "..."
 local KEY = "KEY"
 local CHARS = "CHARS"
 local SEQ_START = "+SEQ"
@@ -611,7 +613,7 @@ function Lexer:block_indent(indent, hint, floating, scalar_type)
 					return nil, self:error("Wrong indentation, found longer empty line before")
 				end
 			end
-			if self.iter:match("...") then
+			if self.iter:match(END_DOC) then
 				break
 			end
 		end
@@ -648,12 +650,12 @@ function Lexer:scalar(indent, floating)
 					scalar = scalar .. " " .. trim(line)
 				end
 				self.iter:next()
-				if self.iter:match("...") or self.iter:match("---") then
+				if self.iter:match(END_DOC) or self.iter:match(START_DOC) then
 					break
 				end
 				chars = {}
-			elseif self.iter:match("# ") then
-				error("found comment")
+			-- elseif self.iter:match("# ") then
+			-- 	error("found comment")
 			elseif self.iter:match(": ") or self.iter:match(":\n") then
 				return ERR, self:error("multiline Key is not allowed")
 			else
@@ -765,7 +767,7 @@ function Lexer:quoted()
 			end
 		elseif self.iter:peek() == NL then
 			self.iter:next()
-			if self.iter:match("...") or self.iter:match("---") then
+			if self.iter:match(END_DOC) or self.iter:match(START_DOC) then
 				if self.iter:peek(4) == " " or self.iter:peek(4) == NL then
 					return nil, self:error("invalid document-end marker in quoted scalar")
 				end
@@ -859,8 +861,12 @@ end
 ---@return string|nil the chomping inddicator or nil on error
 ---@return number|string the indentation indicator or the error message
 function Lexer:folded_attrs()
+	print("folded atrrs: '" .. self.iter:peek() .. "'")
 	local indent = 0
 	local chopped = CLIP
+	if self.iter:match("#") then
+		return nil, self:error("comment without space")
+	end
 	while self.iter:peek() and self.iter:peek() ~= NL do
 		if self.iter:peek() == STRIP then
 			chopped = STRIP
@@ -900,7 +906,7 @@ function Lexer:folded(indent)
 		assert(type(mes) == "string")
 		return ERR, mes
 	end
-	print(require("str").to_string(lines))
+	print("== folded: " .. require("str").to_string(lines))
 	local indented = false
 	local after_first = false
 	local empty_line = false
@@ -1240,7 +1246,12 @@ function Lexer:flow_seq(indent)
 			chars_type = nil
 			chars = {}
 			while self.iter:peek() and self.iter:peek() ~= "]" and self.iter:peek() ~= "," do
-				table.insert(chars, self.iter:next())
+				if self.iter:match(NL) then
+					table.insert(chars, " ")
+					self.iter:next()
+				else
+					table.insert(chars, self.iter:next())
+				end
 			end
 			self:push(CHARS, indent + 1, trim(table.concat(chars, "")), chars_type)
 			chars_type = nil
@@ -1380,6 +1391,8 @@ function Lexer:flow_map(indent)
 			assert(self.iter:peek() == "]", "expected ] but was " .. self.iter:peek())
 			self.iter:next()
 			chars = nil
+		elseif self:is_comment() then
+			self:skip_space_or_comment()
 		else
 			if not chars then
 				chars = {}
@@ -1567,6 +1580,7 @@ function Lexer:map(indent)
 			-- consume the value
 			self:skip_space_or_comment()
 			if self:tag_anchor_alias(indent) ~= ALIAS then
+				self:skip_space_or_comment()
 				if self.iter:match(NL) then
 					print("map value on new line")
 					self.iter:next()
@@ -1574,11 +1588,6 @@ function Lexer:map(indent)
 						self:skip_space_or_comment()
 						self.iter:next()
 					end
-					-- self:skip_space_or_comment()
-					-- if self.iter:match(NL) then
-					-- 	self.iter:next()
-					-- 	self:skip_space_or_comment()
-					-- end
 					local next_indent = self:indent()
 					if self.iter:eof() or (next_indent <= indent and self:is_key()) then
 						self:push(CHARS, indent, "")
@@ -1600,7 +1609,7 @@ function Lexer:map(indent)
 			self:skip_space_or_comment()
 		elseif self.iter:match("?") then
 			self:complex(self.iter.col)
-		elseif self.iter:match("---") or self.iter:match("...") then
+		elseif self.iter:match(START_DOC) or self.iter:match(END_DOC) then
 			break
 		elseif self.iter:match(NL) then
 			print("MAP NL")
@@ -1623,134 +1632,6 @@ function Lexer:map(indent)
 			return res, mes
 		end
 	end
-	print("map end")
-	-- 	print("cMap " .. self.iter:peek())
-	-- 	if self.iter:match("- ") then
-	-- 		self.iter:rewind(1)
-	-- 		self:push(MAP_END, indent, nil)
-	-- 		return OK
-	-- 	elseif self.iter:match("? ") then
-	-- 		print("found complex key")
-	-- 		res, mes = self:complex(indent)
-	-- 	elseif (self.iter:match("[") or self.iter:match("{")) and self:flow_is_key() then
-	-- 		print("flow key")
-	-- 		res, mes = self:flow(indent)
-	-- 		self.iter:next()
-	-- 		if self.iter:peek() == NL then
-	-- 			self.iter:next()
-	-- 			local next_indent = self:indent()
-	-- 			self.iter:skip_space()
-	-- 			print("character after nl " .. (self.iter:peek() or "eof"))
-	-- 			if self.iter:peek() == "#" then
-	-- 				self:comment()
-	-- 				next_indent = self:next_indent()
-	-- 				self.iter:next(next_indent + 1)
-	-- 			else
-	-- 				error("not implemented")
-	-- 			end
-	-- 			res, mes = self:block_node(next_indent, true)
-	-- 		end
-	-- 		chars = nil
-	-- 	elseif self:is_key() then
-	-- 		print("found key")
-	-- 		self:tag_anchor_alias(indent)
-	-- 		local key = {}
-	-- 		if self.iter:peek() == "[" or self.iter:peek() == "{" then
-	-- 			error("this is unreachable")
-	-- 			self:flow(indent)
-	-- 		elseif self.iter:peek() == DOUBLE_QUOTE or self.iter:peek() == SINGLE_QUOTE then
-	-- 			local quote_type = self.iter:peek()
-	-- 			local txt
-	-- 			txt, mes = self:quoted()
-	-- 			if not txt then
-	-- 				return ERR, mes
-	-- 			end
-	-- 			key = txt
-	-- 			print("quoted KEY: '" .. table.concat(key, "") .. "'")
-	-- 			self:push(KEY, indent, table.concat(key, ""), quote_type)
-	-- 			self.iter:skip_space()
-	-- 		else
-	-- 			-- while not self.iter:match(": ") and not self.iter:match(":\n") do
-	-- 			while not self.iter:match(": ") and not self.iter:match(":\n") and not self.iter:match(":\t") do
-	-- 				table.insert(key, self.iter:next())
-	-- 			end
-	-- 			print("KEY: '" .. table.concat(key, "") .. "'")
-	-- 			self:push(KEY, indent, table.concat(key, ""))
-	-- 		end
-	-- 		self.iter:next()
-	-- 		self.iter:skip_space()
-	-- 		-- test for nested key
-	-- 		if self:is_key() then
-	-- 			return ERR, self:error("invalid nested block mapping on the same line")
-	-- 		end
-	-- 		print("map next char: " .. (self.iter:peek() or "eof"))
-	-- 		if self:tag_anchor_alias(indent) ~= ALIAS then
-	-- 			if self.iter:peek() == NL then
-	-- 				self.iter:next()
-	-- 				local next_indent = self:indent()
-	-- 				self.iter:skip_space()
-	-- 				print("character after nl " .. (self.iter:peek() or "eof"))
-	-- 				if self.iter:peek() == "#" then
-	-- 					self:comment()
-	-- 					next_indent = self:next_indent()
-	-- 					self.iter:next(next_indent + 1)
-	-- 				end
-	-- 				res, mes = self:block_node(next_indent, true)
-	-- 			elseif self.iter:peek() == "#" then
-	-- 				self:comment()
-	-- 				local next_indent = self:next_indent()
-	-- 				print("found comment:" .. next_indent)
-	-- 				self.iter:next(next_indent + 1)
-	-- 				if next_indent == indent and self:is_key() then
-	-- 					self:push(CHARS, indent, "")
-	-- 				else
-	-- 					res, mes = self:block_node(next_indent, true)
-	-- 				end
-	-- 			elseif self.iter:match(" -") then -- TODO: this is unchecked
-	-- 				error("unreachable") -- TODO
-	-- 				self:push(MAP_END, indent, nil)
-	-- 				return OK
-	-- 			else
-	-- 				print("map: enter block node: " .. indent .. ":" .. self:next_indent())
-	-- 				res, mes = self:block_node(indent, false)
-	-- 			end
-	-- 		end
-	-- 		if not self.iter:eof() then
-	-- 			if self:next_indent() < indent then
-	-- 				self:push(MAP_END, indent, nil)
-	-- 				return OK
-	-- 			end
-	-- 		end
-	-- 	elseif self:is_comment() then
-	-- 		self:comment()
-	-- 	elseif self.iter:match("---") or self.iter:match("...") then
-	-- 		self:push(MAP_END, indent, nil)
-	-- 		return OK
-	-- 	elseif self.iter:peek() == NL then
-	-- 		print("MAP NL" .. self.iter.row)
-	-- 		self.iter:next()
-	-- 		if self:is_comment() then
-	-- 			self:comment()
-	-- 		end
-	-- 		if self:indent() < indent then
-	-- 			self:push(MAP_END, indent, nil)
-	-- 			print("return MAP")
-	-- 			return OK
-	-- 		elseif self:indent() > indent then
-	-- 			local next_indent = self:indent()
-	-- 			self.iter:next(next_indent)
-	-- 			return ERR, self:error(string.format("Wrong indentation: should be %d but is %d", indent, next_indent))
-	-- 		end
-	-- 		self.chars = {}
-	-- 		self.iter:skip_space()
-	-- 	else
-	-- 		table.insert(chars, self.iter:next())
-	-- 	end
-	-- 	if res ~= OK then
-	-- 		self:push(MAP_END, indent, nil)
-	-- 		return res, mes
-	-- 	end
-	-- end
 	self:push(MAP_END, indent, nil)
 	return OK
 end
@@ -1816,7 +1697,7 @@ function Lexer:sequence(indent)
 			end
 		elseif self.iter:match("#") then
 			self:comment()
-		elseif self.iter:match("---") or self.iter:match("...") then
+		elseif self.iter:match(START_DOC) or self.iter:match(END_DOC) then
 			self:push(SEQ_END, indent, nil)
 			return OK
 		elseif self.iter:match(NL) then
@@ -1878,6 +1759,7 @@ function Lexer:block_node(indent, floating)
 			self:push(CHARS, next_indent, literal, "literal")
 			return OK
 		elseif self.iter:match(">") then
+			print("found folded")
 			local next_indent = self:next_indent()
 			local folded, message = self:folded(indent)
 			if folded == ERR then
@@ -1888,10 +1770,18 @@ function Lexer:block_node(indent, floating)
 			return OK
 		elseif self.iter:match("?") then
 			res, mes = self:map(self.iter.col)
-			return res, mes
+			if not res then
+				return ERR, mes
+			else
+				return res, mes
+			end
 		elseif self:is_key() then
 			res, mes = self:map(indent)
-			return res, mes
+			if not res then
+				return ERR, mes
+			else
+				return res, mes
+			end
 		elseif self.iter:peek() == SINGLE_QUOTE or self.iter:peek() == DOUBLE_QUOTE then
 			local quote = self.iter:peek()
 			local txt
@@ -1912,7 +1802,7 @@ function Lexer:block_node(indent, floating)
 				return res, mes
 			end
 			return OK
-		elseif self.iter:match("---") or self.iter:match("...") then
+		elseif self.iter:match(START_DOC) or self.iter:match(END_DOC) then
 			return OK
 		elseif self.iter:peek() == NL then
 			error("no newline expected")
@@ -1957,7 +1847,7 @@ function Lexer:explicit()
 		self.iter:next()
 	end
 	print("close document: '" .. (self.iter:peek() or "eof") .. "'")
-	if self.iter:match("...") then
+	if self.iter:match(END_DOC) then
 		if string.sub(self.tokens[#self.tokens].kind, 1, 4) == "+DOC" then
 			print("explicit: end DOC ...")
 			table.insert(self.tokens, { kind = CHARS, indent = 0, value = "" })
@@ -1992,9 +1882,9 @@ function Lexer:stream()
 	table.insert(self.tokens, { kind = "+STR", indent = 0 })
 	while not self.iter:eof() do
 		print("stream loop: " .. self.iter.row .. ":" .. self.iter.col .. "'" .. self.iter:peek() .. "'")
-		if self.iter:match("---") then
+		if self.iter:match(START_DOC) then
 			res, mes = self:explicit()
-		elseif self.iter:match("...") then
+		elseif self.iter:match(END_DOC) then
 			self.iter:next(3)
 		elseif self.iter:match(NL) then
 			print("skip NL")
@@ -2011,7 +1901,7 @@ function Lexer:stream()
 			if not self.iter:eof() and self.iter:peek() == NL then -- TODO the iter should be before the NL
 				self.iter:next()
 			end
-			if self.iter:match("...") then
+			if self.iter:match(END_DOC) then
 				if self.tokens[#self.tokens].kind == "+DOC" then
 					table.insert(self.tokens, { kind = CHARS, indent = 0, value = "" })
 				end

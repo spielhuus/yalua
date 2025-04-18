@@ -663,7 +663,7 @@ key3:
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex a sequence with #empty entries and anchor", function()
+	it("should lex a sequence with empty entries and anchor", function()
 		local doc = [[
 - val1
 - &a
@@ -685,4 +685,37 @@ key3:
 		assert(lexer)
 		assert.are.same(expect, tostring(lexer))
 	end)
+
+	-- TODO
+	-- 	it("should lex a map with #empty anchor and comment", function()
+	-- 		local doc = [[
+	-- ---
+	-- top1: &node1
+	--   &k1 key1: one
+	-- top2: &node2 # comment
+	--   key2: two
+	-- ]]
+	-- 		local iter = StringIterator:new(doc)
+	-- 		local lexer, _ = Lexer:new(iter)
+	-- 		local expect = [[
+	-- +STR
+	-- +DOC
+	-- +MAP
+	-- =VAL :top1
+	-- +MAP &node1
+	-- =VAL &k1 :key1
+	-- =VAL :one
+	-- -MAP
+	-- =VAL :top2
+	-- +MAP &node2
+	-- =VAL :key2
+	-- =VAL :two
+	-- -MAP
+	-- -MAP
+	-- -DOC
+	-- -STR
+	-- ]]
+	-- 		assert(lexer)
+	-- 		assert.are.same(expect, tostring(lexer))
+	-- 	end)
 end)

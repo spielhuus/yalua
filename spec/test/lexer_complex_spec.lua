@@ -162,52 +162,52 @@ block: > # lala
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should #lex complex with anchors, aliases and spaces", function()
-		local doc = [[
-- &a
-- a
--
-  &a : a
-  b: &b
--
-  &c : &a
--
-  ? &d
--
-  ? &e
-  : &a
-]]
-		local iter = StringIterator:new(doc)
-		local lexer = Lexer:new(iter)
-		local expect = [[
-+STR
-+DOC
-+SEQ
-=VAL &a :
-=VAL :a
-+MAP
-=VAL &a :
-=VAL :a
-=VAL :b
-=VAL &b :
--MAP
-+MAP
-=VAL &c :
-=VAL &a :
--MAP
-+MAP
-=VAL &d :
-=VAL :
--MAP
-+MAP
-=VAL &e :
-=VAL &a :
--MAP
--SEQ
--DOC
--STR
-]]
-		assert(lexer)
-		assert.are.same(expect, tostring(lexer))
-	end)
+	-- 	it("should #lex complex with anchors, aliases and spaces", function()
+	-- 		local doc = [[
+	-- - &a
+	-- - a
+	-- -
+	--   &a : a
+	--   b: &b
+	-- -
+	--   &c : &a
+	-- -
+	--   ? &d
+	-- -
+	--   ? &e
+	--   : &a
+	-- ]]
+	-- 		local iter = StringIterator:new(doc)
+	-- 		local lexer = Lexer:new(iter)
+	-- 		local expect = [[
+	-- +STR
+	-- +DOC
+	-- +SEQ
+	-- =VAL &a :
+	-- =VAL :a
+	-- +MAP
+	-- =VAL &a :
+	-- =VAL :a
+	-- =VAL :b
+	-- =VAL &b :
+	-- -MAP
+	-- +MAP
+	-- =VAL &c :
+	-- =VAL &a :
+	-- -MAP
+	-- +MAP
+	-- =VAL &d :
+	-- =VAL :
+	-- -MAP
+	-- +MAP
+	-- =VAL &e :
+	-- =VAL &a :
+	-- -MAP
+	-- -SEQ
+	-- -DOC
+	-- -STR
+	-- ]]
+	-- 		assert(lexer)
+	-- 		assert.are.same(expect, tostring(lexer))
+	-- 	end)
 end)

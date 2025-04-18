@@ -56,7 +56,7 @@ published: true
 			author = "omkarbirade",
 			published = true,
 		}
-		print(yaml.stream(Example1))
+		-- print(yaml.stream(Example1))
 	end)
 
 	it("should parse simple example", function()
