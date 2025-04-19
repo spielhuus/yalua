@@ -1,4 +1,5 @@
 local StringIterator = {}
+StringIterator.__index = StringIterator
 
 ---String Iterator
 ---@class StringIterator
@@ -14,7 +15,6 @@ function StringIterator:new(str)
 	o.index = 0
 	o.row = 1
 	o.col = 0
-	self.__index = self
 	return o
 end
 
