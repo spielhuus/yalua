@@ -92,6 +92,17 @@ function StringIterator:skip_space()
 	end
 end
 
+---get the offset to a character
+function StringIterator:offset(char)
+	local index = 1
+	while self:peek(index) and index < 1024 do
+		if self:match(char, index) then
+			return index
+		end
+		index = index + 1
+	end
+end
+
 ---Rewind n characters in the iterator
 ---@param n integer Number of characters to rewind
 ---@return nil

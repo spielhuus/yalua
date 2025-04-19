@@ -686,6 +686,54 @@ key3:
 		assert.are.same(expect, tostring(lexer))
 	end)
 
+	it("should lex a map with anchor and alias", function()
+		local doc = [[
+top3: &node3
+  *alias1 : scalar3
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :top3
++MAP &node3
+=ALI *alias1
+=VAL :scalar3
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
+	it("should lex an aliased #map", function()
+		local doc = [[
+&a: key: &a value
+foo:
+  *a:
+]]
+		local iter = StringIterator:new(doc)
+		local lexer, _ = Lexer:new(iter)
+		local expect = [[
++STR
++DOC
++MAP
+=VAL &a: :key
+=VAL &a :value
+=VAL :foo
+=ALI *a:
+-MAP
+-DOC
+-STR
+]]
+		assert(lexer)
+		assert.are.same(expect, tostring(lexer))
+	end)
+
 	-- TODO
 	-- 	it("should lex a map with #empty anchor and comment", function()
 	-- 		local doc = [[
