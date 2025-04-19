@@ -12,7 +12,7 @@ describe("Test Errors", function()
 		local iter = StringIterator:new(doc)
 		local lexer, mes = Lexer:new(iter)
 		assert.Equal(nil, lexer)
-		assert.Equal("ERROR:3:11 Empty sequence entry\n[ a, b, c, , ]\n           ^", mes)
+		assert.Equal("ERROR:3:11 empty sequence entry\n[ a, b, c, , ]\n           ^", mes)
 	end)
 
 	it("should handle, Flow mapping missing a separating comma", function()

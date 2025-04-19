@@ -77,7 +77,7 @@ describe("Test the flow types", function()
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex empty key in map", function()
+	it("should lex #empty key in map", function()
 		local doc = [[
 implicit block key : [
   implicit flow key : value,
@@ -104,7 +104,7 @@ implicit block key : [
 		assert.are.same(expect, tostring(lexer))
 	end)
 
-	it("should lex map nested in sequence", function()
+	it("should lex map #nested in sequence", function()
 		local doc = [[
 seq: [ 1, 2, 3, { a: b, c: d } ]
 ]]
@@ -381,6 +381,73 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 =VAL :baz
 -MAP
 -SEQ
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
+
+	it("should handle multiline sequence", function()
+		local doc = [[
+[
+  aaa,
+  bbb,
+  ccc,
+  ddd,
+]
+]]
+		local expect = [[
++STR
++DOC
++SEQ []
+=VAL :aaa
+=VAL :bbb
+=VAL :ccc
+=VAL :ddd
+-SEQ
+-DOC
+-STR
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Same(expect, tostring(lexer))
+	end)
+
+	it("should error on #wrongly indented sequence", function()
+		local doc = [[
+key: [
+aaa,
+bbb,
+ccc,
+ddd,
+]
+]]
+		local iter = StringIterator:new(doc)
+		local lexer = Lexer:new(iter)
+		assert.is.Nil(lexer)
+	end)
+	it("should handle indented map", function()
+		local doc = [[
+parent:
+  child: {
+    key: value
+    }
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :parent
++MAP
+=VAL :child
++MAP {}
+=VAL :key
+=VAL :value
+-MAP
+-MAP
+-MAP
 -DOC
 -STR
 ]]
