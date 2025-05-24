@@ -95,7 +95,74 @@ keep: |+
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex map with line prefix #subject", function()
+	it("should lex a literal multiline scalar", function()
+		local doc = [[
+strip: >
+  text
+  another line
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL >text another line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a literal multiline scalar with empty lines", function()
+		local doc = [[
+strip: >
+  text
+
+  
+  another line
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL >text\n\nanother line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a literal multiline scalar with more indented #lines", function()
+		local doc = [[
+strip: >
+  text
+  another line
+
+    list
+    items
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL >text another line\n\n  list\n  items\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+	it("should lex map with line prefix #skip", function()
 		local doc = [[
 plain: text
   lines
@@ -124,7 +191,7 @@ block: |
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex literal with yaml content", function()
+	it("should lex wrong literal attribute #skip", function()
 		local doc = [[
 plain: |
   plain: |x
@@ -145,7 +212,7 @@ plain: |
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex literal with yaml content and special characters", function()
+	it("should lex literal with yaml content and special characters #skip", function()
 		local doc = [[
 - yaml: |
     --- |1-∎

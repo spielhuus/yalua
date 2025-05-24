@@ -53,7 +53,6 @@ happy mom
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -134,7 +133,6 @@ foo: bar
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -159,7 +157,6 @@ foo:
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -186,7 +183,6 @@ foo:
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -212,7 +208,6 @@ rbi: 147   # Runs Batted In
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -238,7 +233,6 @@ avg:
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -477,7 +471,6 @@ Document
 ---
 value
 ]]
-
 		local expect = [[
 +STR
 +DOC ---
@@ -503,7 +496,6 @@ Document
 ---
 value
 ]]
-
 		local expect = [[
 +STR
 +DOC
@@ -549,7 +541,6 @@ matches %: 20
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -567,7 +558,6 @@ value
 -DOC
 -STR
 ]]
-
 		local result = yalua.dump(doc)
 		assert(result)
 		assert.are.same(expect, result)
@@ -593,59 +583,57 @@ key: value
 		assert.are.same(expect, result)
 	end)
 
-	--   --   it("should lex a mapping key, with spaces", function()
-	--   --     local doc = [[
-	--   -- "implicit block key" : [
-	--   --   "implicit flow key" : value,
-	--   --  ]
-	--   -- ]]
-	--   --     local iter = StringIterator:new(doc)
-	--   --     local lexer = Lexer:new(iter)
-	--   --     local expect = [[
-	--   -- +STR
-	--   -- +DOC
-	--   -- +MAP
-	--   -- =VAL "implicit block key
-	--   -- +SEQ []
-	--   -- +MAP {}
-	--   -- =VAL "implicit flow key
-	--   -- =VAL :value
-	--   -- -MAP
-	--   -- -SEQ
-	--   -- -MAP
-	--   -- -DOC
-	--   -- -STR
-	--   -- ]]
-	--   --     assert(lexer)
-	--   --     assert.are.same(expect, tostring(lexer))
-	--   --   end)
-	--   --
-	--   --   it("should lex a mapping key", function()
-	--   --     local doc = [[
-	--   -- "implicit block key": [
-	--   --   "implicit flow key" : value,
-	--   --  ]
-	--   -- ]]
-	--   --     local iter = StringIterator:new(doc)
-	--   --     local lexer = Lexer:new(iter)
-	--   --     local expect = [[
-	--   -- +STR
-	--   -- +DOC
-	--   -- +MAP
-	--   -- =VAL "implicit block key
-	--   -- +SEQ []
-	--   -- +MAP {}
-	--   -- =VAL "implicit flow key
-	--   -- =VAL :value
-	--   -- -MAP
-	--   -- -SEQ
-	--   -- -MAP
-	--   -- -DOC
-	--   -- -STR
-	--   -- ]]
-	--   --     assert(lexer)
-	--   --     assert.are.same(expect, tostring(lexer))
-	--   --   end)
+	it("should lex a mapping key, with spaces #subject", function()
+		local doc = [[
+"implicit block key" : [
+  "implicit flow key" : value,
+ ]
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL "implicit block key
++SEQ []
++MAP {}
+=VAL "implicit flow key
+=VAL :value
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a mapping key", function()
+		local doc = [[
+"implicit block key": [
+  "implicit flow key" : value,
+ ]
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL "implicit block key
++SEQ []
++MAP {}
+=VAL "implicit flow key
+=VAL :value
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 
 	it("should lex a sequence", function()
 		local doc = [[
@@ -740,10 +728,9 @@ key:
 -DOC
 -STR
 ]]
-		-- TODO
-		-- local result = yalua.dump(doc)
-		-- assert(result)
-		-- assert.are.same(expect, result)
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
 	end)
 
 	it("should lex a node with #folded scalar", function()
