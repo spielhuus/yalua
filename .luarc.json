@@ -1,0 +1,14 @@
+{
+    "diagnostics.libraryFiles": "Disable",
+    "runtime.version": "LuaJIT",
+    "workspace.checkThirdParty": "Disable",
+    "workspace.ignoreDir": [".lua", ".luarocks", ".venv", "spec"],
+    "diagnostics.globals": [
+      "vim",
+      "before_each",
+      "after_each",
+      "describe",
+      "it",
+      "assert"    
+    ],
+}
