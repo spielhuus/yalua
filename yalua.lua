@@ -593,7 +593,7 @@ function Parser:quoted(token)
 	return trim(res)
 end
 
-function Parser:folded(token, indent)
+function Parser:folded(token, indent, folded)
 	local lines = {}
 	assert(token.kind == "VAL")
 	table.insert(lines, token.val)
@@ -604,14 +604,18 @@ function Parser:folded(token, indent)
 				return nil, self.lexer:error("invalid multiline plain key", self.lexer:peek())
 			end
 		elseif self.lexer:peek().kind == "SEP" then
-			if #self.lexer:peek().val <= indent then
+			if not folded and #self.lexer:peek().val <= indent then
+				break
+			elseif folded and #self.lexer:peek().val < indent then
 				break
 			end
 			self.lexer:next()
 		elseif self.lexer:peek().kind == "NL" then
 			if not self.lexer:peek(2) then
 				break
-			elseif self.lexer:peek(2).kind == "SEP" and #self.lexer:peek().val <= indent then
+			elseif not folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek().val <= indent then
+				break
+			elseif folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek().val < indent then
 				break
 			end
 			self.lexer:next()
@@ -673,7 +677,7 @@ function Parser:literal(token, indent)
 	return result
 end
 
-function Parser:block_node(indent)
+function Parser:block_node(indent, folded)
 	local state = "STATE"
 	for _, s in ipairs(self.state) do
 		state = state .. " > " .. s
@@ -688,7 +692,7 @@ function Parser:block_node(indent)
 				token.anchor = anchor
 				return self:map(indent, token)
 			else
-				local val = self:folded(token, indent)
+				local val = self:folded(token, indent, folded)
 				return { { kind = "VAL", val = val, tag = self.tagref, anchor = anchor } }
 			end
 		elseif token.kind == "QUOTED" then
@@ -743,7 +747,7 @@ function Parser:block_node(indent)
 			return { { kind = "ALIAS", val = token.val, tag = self.tagref } }
 		elseif token.kind == "COMPLEX" then
 			assert(self.lexer:peek().kind == "SEP")
-			local key = self:block_node(self.lexer:peek().col)
+			local key = self:block_node(self.lexer:peek().col, false)
 			return self:map(indent, key)
 		elseif token.kind == "NL" then
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
@@ -942,7 +946,7 @@ function Parser:sequence(indent)
 				if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 					new_indent = #self.lexer:next().val
 					-- TODO local child = self:block_node(new_indent)
-					local child = self:block_node(new_indent)
+					local child = self:block_node(new_indent, false)
 					self:push(tokens, child)
 				else
 					error("no sep found")
@@ -958,7 +962,7 @@ function Parser:sequence(indent)
 		then
 			table.insert(tokens, { kind = "VAL", val = "", anchor = self.lexer:next() })
 		else
-			local val = self:block_node(token.col)
+			local val = self:block_node(token.col, true)
 			self:push(tokens, val)
 		end
 		token = self.lexer:peek()
@@ -976,7 +980,7 @@ function Parser:map(indent, key_token)
 	local token = self.lexer:next()
 	while token do
 		if token.kind == "VAL" then
-			local val, mes = self:folded(token, indent)
+			local val, mes = self:folded(token, indent, false)
 			if not val then
 				return val, mes
 			end
@@ -1013,7 +1017,7 @@ function Parser:map(indent, key_token)
 					end
 				end
 				if not has_empty_val then
-					local res = self:block_node(next_indent)
+					local res = self:block_node(next_indent, true)
 					if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 						local sep = self.lexer:peek()
 						if #sep.val > indent then
@@ -1034,7 +1038,7 @@ function Parser:map(indent, key_token)
 		elseif token.kind == "COMPLEX" then
 			assert(self.lexer:peek().kind == "SEP")
 			self.lexer:next()
-			local val = self:block_node(self.lexer:peek().col)
+			local val = self:block_node(self.lexer:peek().col, true)
 			self:push(tokens, val)
 			-- assert(self.lexer:peek().kind == "SEP")
 			-- self.lexer:next()
@@ -1079,7 +1083,7 @@ function Parser:bare(indent)
 		elseif token.kind == "NL" then
 			self.lexer:next()
 		else
-			local child, mes = self:block_node(indent)
+			local child, mes = self:block_node(indent, false)
 			if child then
 				self:push(childs, child)
 			else

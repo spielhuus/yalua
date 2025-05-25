@@ -710,7 +710,7 @@ key: value
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a node with multiline scalar #subject", function()
+	it("should lex a node with multiline scalar", function()
 		local doc = [[
 # This is a comment
 ---
