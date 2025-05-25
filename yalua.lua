@@ -947,7 +947,8 @@ function Parser:map(indent, key_token)
 			if not val then
 				return val, mes
 			end
-			table.insert(tokens, { kind = "VAL", val = val })
+			table.insert(tokens, { kind = "VAL", val = val, anchor = self.anchor })
+			self.anchor = nil
 		elseif token.kind == "SEP" then
 			if #token.val < indent then
 				self.lexer:rewind()
@@ -1000,6 +1001,15 @@ function Parser:map(indent, key_token)
 		elseif token.kind == "START_DOC" or token.kind == "END_DOC" then
 			self.lexer:rewind()
 			break
+		elseif
+			token.kind == "ANCHOR"
+			and self.lexer:peek()
+			and self.lexer:peek().kind == "NL"
+			and self.lexer:peek(2)
+			and self.lexer:peek(2).kind == "SEP"
+			and #self.lexer:peek(2).val == indent
+		then
+			table.insert(tokens, { kind = "VAL", val = "", anchor = token })
 		else
 			self.lexer:rewind()
 			local child = self:block_node(indent)

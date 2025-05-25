@@ -1227,7 +1227,32 @@ key3: *a
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with empty values with anchor", function()
+	it("should lex a map with emty values", function()
+		local doc = [[
+key1: val1
+key2:
+key3: val3
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL :
+=VAL :key3
+=VAL :val3
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with empty values with anchor #subject", function()
 		local doc = [[
 key1: val1
 key2: &a
