@@ -305,6 +305,9 @@ function Lexer:token()
 		elseif self.flow_level > 0 and char == ":" then
 			local row, col = self.row, self.col
 			return self:create_token("FLOW_COLON", self:next_char(), row, col)
+		elseif char == "?" and (self:peek_char(2) == " " or self:peek_char(2) == "\n") then
+			local row, col = self.row, self.col
+			return self:create_token("COMPLEX", self:next_char(), row, col)
 		elseif char == "|" then
 			local row, col = self.row, self.col
 			local token = self:create_token("FOLDED", self:next_char(), row, col)
@@ -474,7 +477,7 @@ function Lexer:html()
   color: #fff;
   text-decoration: none;
 }
-.DASH, .COLON, .START_FLOW_SEQ, .END_FLOW_SEQ, .FLOW_SEP, .START_DOC, .END_DOC, .ANCHOR, .ALIAS {
+.DASH, .COLON, .START_FLOW_SEQ, .END_FLOW_SEQ, .FLOW_SEP, .START_DOC, .END_DOC, .ANCHOR, .ALIAS, .COMPLEX {
   background-color: #4C0000;
   }
 
@@ -569,10 +572,12 @@ end
 function Parser:push(target, tokens)
 	if not tokens then
 		table.insert(target, { kind = "VAL", val = "" })
-	else
+	elseif tokens[1] and type(tokens[1]) == "table" then
 		for _, t in ipairs(tokens) do
 			table.insert(target, t)
 		end
+	else
+		table.insert(target, tokens)
 	end
 end
 
@@ -736,6 +741,10 @@ function Parser:block_node(indent)
 			self.anchor = token
 		elseif token.kind == "ALIAS" then
 			return { { kind = "ALIAS", val = token.val, tag = self.tagref } }
+		elseif token.kind == "COMPLEX" then
+			assert(self.lexer:peek().kind == "SEP")
+			local key = self:block_node(self.lexer:peek().col)
+			return self:map(indent, key)
 		elseif token.kind == "NL" then
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				local next_indent = #self.lexer:next().val
@@ -963,7 +972,7 @@ function Parser:map(indent, key_token)
 	local tokens = {}
 	table.insert(tokens, { kind = "+MAP", tag = self.tagref })
 	self.tagref = nil
-	table.insert(tokens, key_token)
+	self:push(tokens, key_token)
 	local token = self.lexer:next()
 	while token do
 		if token.kind == "VAL" then
@@ -1022,6 +1031,14 @@ function Parser:map(indent, key_token)
 					self:push(tokens, res)
 				end
 			end
+		elseif token.kind == "COMPLEX" then
+			assert(self.lexer:peek().kind == "SEP")
+			self.lexer:next()
+			local val = self:block_node(self.lexer:peek().col)
+			self:push(tokens, val)
+			-- assert(self.lexer:peek().kind == "SEP")
+			-- self.lexer:next()
+			-- error("found complex: " .. self.lexer:peek().kind)
 		elseif token.kind == "START_DOC" or token.kind == "END_DOC" then
 			self.lexer:rewind()
 			break

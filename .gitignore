@@ -1,0 +1,11 @@
+.luarocks
+# .nvim
+*.bak
+*.log
+libfyaml
+test.yaml
+luacov.stats.out
+luacov.report.out
+coverage
+spec/suite/
+yaml-test-suite/

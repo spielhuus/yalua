@@ -710,7 +710,7 @@ key: value
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a node with multiline scalar #skip", function()
+	it("should lex a node with multiline scalar #subject", function()
 		local doc = [[
 # This is a comment
 ---
@@ -1389,6 +1389,71 @@ top2: &node2 # comment
 =VAL :key2
 =VAL :two
 -MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with complex key", function()
+		local doc = [[
+---
+? - key1
+  - key2
+: - val1
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
++SEQ
+=VAL :key1
+=VAL :key2
+-SEQ
++SEQ
+=VAL :val1
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with complex key with mutliple entries", function()
+		local doc = [[
+---
+? - key1
+  - key2
+: - val1
+
+? - key3
+  - key4
+: - val2
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
++SEQ
+=VAL :key1
+=VAL :key2
+-SEQ
++SEQ
+=VAL :val1
+-SEQ
++SEQ
+=VAL :key3
+=VAL :key4
+-SEQ
++SEQ
+=VAL :val2
+-SEQ
 -MAP
 -DOC
 -STR
