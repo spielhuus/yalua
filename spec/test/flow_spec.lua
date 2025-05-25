@@ -43,7 +43,7 @@ describe("Test flow samples", function()
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex empty key in map #subject", function()
+	it("should lex empty key in map", function()
 		local doc = [[
 - [ foo: bar ]
 - [ foz: baz ]
@@ -103,7 +103,7 @@ describe("Test flow samples", function()
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex #empty key in map", function()
+	it("should lex empty key in map", function()
 		local doc = [[
 implicit block key : [
   implicit flow key : value,
@@ -129,7 +129,7 @@ implicit block key : [
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex map #nested in sequence", function()
+	it("should lex map nested in sequence", function()
 		local doc = [[
 seq: [ 1, 2, 3, { a: b, c: d } ]
 ]]

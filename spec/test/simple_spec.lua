@@ -2,7 +2,7 @@ local assert = require("luassert")
 local yalua = require("yalua")
 
 describe("Test if the Lexer lexes", function()
-	it("should lex a stream #start document", function()
+	it("should lex a stream start document", function()
 		local doc = [[
 ---
 ]]
@@ -333,7 +333,7 @@ key: "this is a quoted string"
 		assert.are.same(expect, result)
 	end)
 
-	it("should parse a #multiline scalar with quotes", function()
+	it("should parse a multiline scalar with quotes", function()
 		local doc = [[
 key: "this is a quoted string
  with multiple
@@ -486,7 +486,7 @@ value
 		assert.are.same(expect, result)
 	end)
 
-	it("should #parse multiple documents", function()
+	it("should parse multiple documents", function()
 		local doc = [[
 Document
 ---
@@ -583,7 +583,7 @@ key: value
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a mapping key, with spaces #subject", function()
+	it("should lex a mapping key, with spaces", function()
 		local doc = [[
 "implicit block key" : [
   "implicit flow key" : value,
@@ -710,7 +710,7 @@ key: value
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a node with multiline scalar", function()
+	it("should lex a node with multiline scalar #skip", function()
 		local doc = [[
 # This is a comment
 ---
@@ -733,7 +733,7 @@ key:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a node with #folded scalar", function()
+	it("should lex a node with folded scalar", function()
 		local doc = [[
 # This is a comment
 ---
@@ -933,27 +933,27 @@ rbi:
 		assert.are.same(expect, result)
 	end)
 
-	--   it("should error on wrong indentation error", function()
-	--     local doc = [[
-	-- key:
-	--    - ok
-	--    - also ok
-	--   - wrong
-	-- 	]]
-	--     local result, mes = Lexer.dump(doc)
-	--     assert.is_nil(result)
-	--     assert.are.same("ERROR:4:2 Wrong indentation: should be 0 but is 2\n  - wrong\n  ^", mes)
-	--   end)
-	--
-	-- 	it("should parse the Wrong indendation in mapping #error", function()
-	-- 		local doc = [[
-	-- k1: v1
-	--  k2: v2
-	-- ]]
-	-- 		local result, mes = Lexer.dump(doc)
-	-- 		assert.is_nil(result)
-	-- 		assert.are.same("ERROR:2:1 wrong indent: is 1 but expected 0\n k2: v2\n ^", mes)
-	-- 	end)
+	it("should error on wrong indentation error", function()
+		local doc = [[
+key:
+   - ok
+   - also ok
+  - wrong
+]]
+		local result, mes = yalua.dump(doc)
+		assert.is_nil(result)
+		assert.are.same("ERROR:4:0 wrong indentation: should be 0 but is 2\n  - wrong\n^", mes)
+	end)
+
+	it("should parse the Wrong indendation in mapping", function()
+		local doc = [[
+k1: v1
+ k2: v2
+]]
+		local result, mes = yalua.dump(doc)
+		assert.is_nil(result)
+		assert.are.same("ERROR:2:3 invalid multiline plain key\n k2: v2\n   ^", mes)
+	end)
 
 	it("should lex a document with a directive", function()
 		local doc = [[
@@ -1071,7 +1071,7 @@ rbi:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with anchors #and reference", function()
+	it("should lex a map with anchors and reference", function()
 		local doc = [[
  - key: &a value
    key2: value2
@@ -1101,7 +1101,7 @@ rbi:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with #anchors in list", function()
+	it("should lex a map with anchors in list", function()
 		local doc = [[
 ---
 hr:
@@ -1135,225 +1135,242 @@ rbi:
 		assert.are.same(expect, result)
 	end)
 
-	--   it("should lex a map with anchors and #comments", function()
-	--     local doc = [[
-	-- a: "double
-	--   quotes" # lala
-	-- b: plain
-	--  value  # lala
-	-- c  : #lala
-	--   d
-	-- e:
-	--  &node # lala
-	--  - x: y
-	-- block: > # lala
-	--   abcde
-	-- ]]
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL :a
-	-- =VAL "double quotes
-	-- =VAL :b
-	-- =VAL :plain value
-	-- =VAL :c
-	-- =VAL :d
-	-- =VAL :e
-	-- +SEQ &node
-	-- +MAP
-	-- =VAL :x
-	-- =VAL :y
-	-- -MAP
-	-- -SEQ
-	-- =VAL :block
-	-- =VAL >abcde\n
-	-- -MAP
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     local result = Lexer.dump(doc)
-	--     assert(result)
-	--     assert.are.same(expect, result)
-	--   end)
+	it("should lex a map with anchors and comments", function()
+		local doc = [[
+a: "double
+  quotes" # lala
+b: plain
+ value  # lala
+c  : #lala
+  d
+e:
+ &node # lala
+ - x: y
+block: > # lala
+  abcde
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :a
+=VAL "double quotes
+=VAL :b
+=VAL :plain value
+=VAL :c
+=VAL :d
+=VAL :e
++SEQ &node
++MAP
+=VAL :x
+=VAL :y
+-MAP
+-SEQ
+=VAL :block
+=VAL >abcde\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 
-	--   it("should lex a map with empty values", function()
-	--     local doc = [[
-	-- key1: val1
-	-- key2:
-	-- key3:
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL :key1
-	-- =VAL :val1
-	-- =VAL :key2
-	-- =VAL :
-	-- =VAL :key3
-	-- =VAL :
-	-- -MAP
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   it("should lex a map with empty values with anchor", function()
-	--     local doc = [[
-	-- key1: val1
-	-- key2: &a
-	-- key3:
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL :key1
-	-- =VAL :val1
-	-- =VAL :key2
-	-- =VAL &a :
-	-- =VAL :key3
-	-- =VAL :
-	-- -MAP
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   it("should lex a sequence with empty entries", function()
-	--     local doc = [[
-	-- - val1
-	-- -
-	-- - val3
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +SEQ
-	-- =VAL :val1
-	-- =VAL :
-	-- =VAL :val3
-	-- -SEQ
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   it("should lex a sequence with empty entries and anchor", function()
-	--     local doc = [[
-	-- - val1
-	-- - &a
-	-- - val3
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +SEQ
-	-- =VAL :val1
-	-- =VAL &a :
-	-- =VAL :val3
-	-- -SEQ
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   it("should lex a map with anchor and alias", function()
-	--     local doc = [[
-	-- top3: &node3
-	--   *alias1 : scalar3
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL :top3
-	-- +MAP &node3
-	-- =ALI *alias1
-	-- =VAL :scalar3
-	-- -MAP
-	-- -MAP
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   it("should lex an aliased map", function()
-	--     local doc = [[
-	-- &a: key: &a value
-	-- foo:
-	--   *a:
-	-- ]]
-	--     local iter = StringIterator:new(doc)
-	--     local lexer, _ = Lexer:new(iter)
-	--     local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL &a: :key
-	-- =VAL &a :value
-	-- =VAL :foo
-	-- =ALI *a:
-	-- -MAP
-	--
-	-- -DOC
-	-- -STR
-	-- ]]
-	--     assert(lexer)
-	--     assert.are.same(expect, tostring(lexer))
-	--   end)
-	--
-	--   -- TODO
-	--   -- 	it("should lex a map with #empty anchor and comment", function()
-	--   -- 		local doc = [[
-	--   -- ---
-	--   -- top1: &node1
-	--   --   &k1 key1: one
-	--   -- top2: &node2 # comment
-	--   --   key2: two
-	--   -- ]]
-	--   -- 		local iter = StringIterator:new(doc)
-	--   -- 		local lexer, _ = Lexer:new(iter)
-	--   -- 		local expect = [[
-	--   -- +STR
-	--   -- +DOC
-	--   -- +MAP
-	--   -- =VAL :top1
-	--   -- +MAP &node1
-	--   -- =VAL &k1 :key1
-	--   -- =VAL :one
-	--   -- -MAP
-	--   -- =VAL :top2
-	--   -- +MAP &node2
-	--   -- =VAL :key2
-	--   -- =VAL :two
-	--   -- -MAP
-	--   -- -MAP
-	--   -- -DOC
-	--   -- -STR
-	--   -- ]]
-	--   -- 		assert(lexer)
-	--   -- 		assert.are.same(expect, tostring(lexer))
-	--   -- 	end)
+	it("should lex a map with empty values", function()
+		local doc = [[
+key1: val1
+key2:
+key3:
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL :
+=VAL :key3
+=VAL :
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with values with anchor", function()
+		local doc = [[
+key1: val1
+key2: &a val2
+key3: *a
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL &a :val2
+=VAL :key3
+=ALI *a
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with empty values with anchor", function()
+		local doc = [[
+key1: val1
+key2: &a
+key3:
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key1
+=VAL :val1
+=VAL :key2
+=VAL &a :
+=VAL :key3
+=VAL :
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a sequence with empty entries #skip", function()
+		local doc = [[
+- val1
+-
+- val3
+]]
+		local expect = [[
++STR
++DOC
++SEQ
+=VAL :val1
+=VAL :
+=VAL :val3
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a sequence with empty entries and anchor #skip", function()
+		local doc = [[
+- val1
+- &a
+- val3
+]]
+		local expect = [[
++STR
++DOC
++SEQ
+=VAL :val1
+=VAL &a :
+=VAL :val3
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with anchor and alias #skip", function()
+		local doc = [[
+top3: &node3
+  *alias1 : scalar3
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :top3
++MAP &node3
+=ALI *alias1
+=VAL :scalar3
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex an aliased map #skip", function()
+		local doc = [[
+&a: key: &a value
+foo:
+  *a:
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL &a: :key
+=VAL &a :value
+=VAL :foo
+=ALI *a:
+-MAP
+
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a map with empty anchor and comment #skip", function()
+		local doc = [[
+---
+top1: &node1
+  &k1 key1: one
+top2: &node2 # comment
+  key2: two
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :top1
++MAP &node1
+=VAL &k1 :key1
+=VAL :one
+-MAP
+=VAL :top2
++MAP &node2
+=VAL :key2
+=VAL :two
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 end)
