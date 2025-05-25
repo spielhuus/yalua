@@ -680,6 +680,7 @@ function Parser:block_node(indent)
 			local anchor = self.anchor
 			self.anchor = nil
 			if self.lexer:peek().kind == "COLON" then
+				token.anchor = anchor
 				return self:map(indent, token)
 			else
 				local val = self:folded(token, indent)
@@ -819,6 +820,15 @@ function Parser:flow_seq(indent)
 			else
 				table.insert(tokens, { kind = "VAL", val = res, type = token.type })
 			end
+		elseif token.kind == "FLOW_COLON" then
+			self.lexer:next()
+			table.insert(tokens, { kind = "+MAP {}" })
+			table.insert(tokens, { kind = "VAL", val = "" })
+			self.lexer:next()
+			local val = self.lexer:next()
+			assert(val.kind == "VAL", "expected VAL  but is: " .. val.kind)
+			table.insert(tokens, { kind = "VAL", val = val.val })
+			table.insert(tokens, { kind = "-MAP" })
 		elseif token.kind == "VAL" then
 			local val = self.lexer:next()
 			if self.lexer:peek().kind == "FLOW_COLON" then
@@ -883,8 +893,8 @@ function Parser:sequence(indent)
 	table.insert(self.state, "SEQ")
 	table.insert(tokens, { kind = "+SEQ", tag = self.tagref, anchor = self.anchor })
 	self.tagref = nil
+	self.anchor = nil
 	local token = self.lexer:peek()
-	local next_indent = indent
 	while token do
 		if token.kind == "SEP" then
 			if indent > #token.val then
@@ -902,14 +912,19 @@ function Parser:sequence(indent)
 					break
 				end
 				self.lexer:next()
-				next_indent = #sep.val
 			end
 		elseif token.kind == "DASH" then
 			self.lexer:next()
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
-				local sep = self.lexer:next()
+				local _ = self.lexer:next()
 			end
-			if self.lexer:peek() and self.lexer:peek().kind == "DASH" then
+			if
+				self.lexer:peek().kind == "NL"
+				and self.lexer:peek(2).kind == "SEP"
+				and #self.lexer:peek(2).val == indent
+			then
+				table.insert(tokens, { kind = "VAL", val = "" })
+			elseif self.lexer:peek() and self.lexer:peek().kind == "DASH" then
 				local child = self:sequence(self.lexer:peek().col)
 				self:push(tokens, child)
 			elseif self.lexer:peek() and self.lexer:peek().kind == "NL" then
@@ -924,6 +939,15 @@ function Parser:sequence(indent)
 					error("no sep found")
 				end
 			end
+		elseif
+			token.kind == "ANCHOR"
+			and self.lexer:peek(2)
+			and self.lexer:peek(2).kind == "NL"
+			and self.lexer:peek(3)
+			and self.lexer:peek(3).kind == "SEP"
+			and #self.lexer:peek(3).val == indent
+		then
+			table.insert(tokens, { kind = "VAL", val = "", anchor = self.lexer:next() })
 		else
 			local val = self:block_node(token.col)
 			self:push(tokens, val)

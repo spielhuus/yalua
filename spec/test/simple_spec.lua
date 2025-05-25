@@ -1252,7 +1252,7 @@ key3: val3
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with empty values with anchor #subject", function()
+	it("should lex a map with empty values with anchor", function()
 		local doc = [[
 key1: val1
 key2: &a
@@ -1277,7 +1277,7 @@ key3:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a sequence with empty entries #skip", function()
+	it("should lex a sequence with empty entries", function()
 		local doc = [[
 - val1
 -
@@ -1299,7 +1299,7 @@ key3:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a sequence with empty entries and anchor #skip", function()
+	it("should lex a sequence with empty entries and anchor", function()
 		local doc = [[
 - val1
 - &a
@@ -1344,7 +1344,7 @@ top3: &node3
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex an aliased map #skip", function()
+	it("should lex an aliased map", function()
 		local doc = [[
 &a: key: &a value
 foo:
@@ -1359,7 +1359,6 @@ foo:
 =VAL :foo
 =ALI *a:
 -MAP
-
 -DOC
 -STR
 ]]
