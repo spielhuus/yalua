@@ -1321,7 +1321,7 @@ key3:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with anchor and alias #skip", function()
+	it("should lex a map with anchor and alias", function()
 		local doc = [[
 top3: &node3
   *alias1 : scalar3
@@ -1367,7 +1367,7 @@ foo:
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a map with empty anchor and comment #skip", function()
+	it("should lex a map with empty anchor and comment", function()
 		local doc = [[
 ---
 top1: &node1
@@ -1377,7 +1377,7 @@ top2: &node2 # comment
 ]]
 		local expect = [[
 +STR
-+DOC
++DOC ---
 +MAP
 =VAL :top1
 +MAP &node1

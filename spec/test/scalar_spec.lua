@@ -139,7 +139,7 @@ strip: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a literal multiline scalar with more indented #lines", function()
+	it("should lex a literal multiline scalar with more indented lines", function()
 		local doc = [[
 strip: >
   text
@@ -162,7 +162,7 @@ strip: >
 		assert(result)
 		assert.are.same(expect, result)
 	end)
-	it("should lex map with line prefix #skip", function()
+	it("should lex map with line prefix skip", function()
 		local doc = [[
 plain: text
   lines

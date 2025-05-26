@@ -566,6 +566,7 @@ function Parser:new(lexer)
 	o.named_tags = {}
 
 	o.state = {}
+	o.anchor = {}
 	return o
 end
 
@@ -683,15 +684,16 @@ function Parser:block_node(indent, folded)
 		state = state .. " > " .. s
 	end
 	local token = self.lexer:next()
-	local act_indent = indent
 	while token do
 		if token.kind == "VAL" then
-			local anchor = self.anchor
-			self.anchor = nil
+			-- self.anchor = nil
 			if self.lexer:peek().kind == "COLON" then
-				token.anchor = anchor
+				if self.anchor[#self.anchor] and self.anchor[#self.anchor].row == token.row then
+					token.anchor = table.remove(self.anchor)
+				end
 				return self:map(indent, token)
 			else
+				local anchor = table.remove(self.anchor)
 				local val = self:folded(token, indent, folded)
 				return { { kind = "VAL", val = val, tag = self.tagref, anchor = anchor } }
 			end
@@ -713,7 +715,7 @@ function Parser:block_node(indent, folded)
 					val = self:literal(token, indent),
 					type = "|",
 					tag = self.tagref,
-					anchor = self.anchor,
+					anchor = table.remove(self.anchor),
 				},
 			}
 		elseif token.kind == "LITERAL" then
@@ -723,7 +725,7 @@ function Parser:block_node(indent, folded)
 					val = self:literal(token, indent),
 					type = ">",
 					tag = self.tagref,
-					anchor = self.anchor,
+					anchor = table.remove(self.anchor),
 				},
 			}
 		elseif token.kind == "COLON" then
@@ -742,9 +744,18 @@ function Parser:block_node(indent, folded)
 		elseif token.kind == "TAGREF" then
 			self.tagref = token
 		elseif token.kind == "ANCHOR" then
-			self.anchor = token
+			-- assert(self.anchor == nil)
+			table.insert(self.anchor, token)
 		elseif token.kind == "ALIAS" then
-			return { { kind = "ALIAS", val = token.val, tag = self.tagref } }
+			local alias = { kind = "ALIAS", val = token.val, tag = self.tagref }
+			if self.lexer:peek().kind == "SEP" then
+				self.lexer:next()
+			end
+			if self.lexer:peek().kind == "COLON" then
+				return self:map(indent, token)
+			else
+				return { alias }
+			end
 		elseif token.kind == "COMPLEX" then
 			assert(self.lexer:peek().kind == "SEP")
 			local key = self:block_node(self.lexer:peek().col, false)
@@ -904,9 +915,9 @@ end
 function Parser:sequence(indent)
 	local tokens = {}
 	table.insert(self.state, "SEQ")
-	table.insert(tokens, { kind = "+SEQ", tag = self.tagref, anchor = self.anchor })
+	table.insert(tokens, { kind = "+SEQ", tag = self.tagref, anchor = table.remove(self.anchor) })
 	self.tagref = nil
-	self.anchor = nil
+	-- self.anchor = nil
 	local token = self.lexer:peek()
 	while token do
 		if token.kind == "SEP" then
@@ -974,18 +985,34 @@ end
 
 function Parser:map(indent, key_token)
 	local tokens = {}
-	table.insert(tokens, { kind = "+MAP", tag = self.tagref })
+	table.insert(tokens, { kind = "+MAP", tag = self.tagref, anchor = table.remove(self.anchor) })
 	self.tagref = nil
-	self:push(tokens, key_token)
+	-- self.anchor = nil
 	local token = self.lexer:next()
+	if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
+		self.lexer:next()
+	end
+	if
+		self.lexer:peek()
+		and self.lexer:peek().kind == "ANCHOR"
+		and self.lexer:peek(2)
+		and self.lexer:peek(2).kind == "NL"
+		and self.lexer:peek(3)
+		and self.lexer:peek(3).kind == "SEP"
+		and #self.lexer:peek(3).val > indent
+	then
+		-- assert(self.anchor == nil)
+		table.insert(self.anchor, self.lexer:next())
+	end
+	self:push(tokens, key_token)
 	while token do
 		if token.kind == "VAL" then
 			local val, mes = self:folded(token, indent, false)
 			if not val then
 				return val, mes
 			end
-			table.insert(tokens, { kind = "VAL", val = val, anchor = self.anchor })
-			self.anchor = nil
+			table.insert(tokens, { kind = "VAL", val = val, anchor = table.remove(self.anchor) })
+			-- self.anchor = nil
 		elseif token.kind == "SEP" then
 			if #token.val < indent then
 				self.lexer:rewind()
@@ -1000,6 +1027,18 @@ function Parser:map(indent, key_token)
 			-- TODO: validate that it is not tab
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				local sep = self.lexer:next()
+			end
+			if
+				self.lexer:peek()
+				and self.lexer:peek().kind == "ANCHOR"
+				and self.lexer:peek(2)
+				and self.lexer:peek(2).kind == "NL"
+				and self.lexer:peek(3)
+				and self.lexer:peek(3).kind == "SEP"
+				and #self.lexer:peek(3).val > indent
+			then
+				-- assert(self.anchor == nil)
+				table.insert(self.anchor, self.lexer:next())
 			end
 			-- when the value is on the next line
 			local has_empty_val = false
