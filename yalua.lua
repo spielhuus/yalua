@@ -61,6 +61,16 @@ local function match(str, char)
 	return false
 end
 
+local function utf8(codepoint)
+	if codepoint <= 0x7F then
+		return string.char(codepoint)
+	elseif codepoint <= 0x7FF then
+		return string.char(0xC0 + (codepoint / 64), 0x80 + (codepoint % 64))
+	elseif codepoint <= 0xFFFF then
+		return string.char(0xE0 + (codepoint / 4096), 0x80 + ((codepoint / 64) % 64), 0x80 + (codepoint % 64))
+	end
+end
+
 ---@class Token
 ---@field kind string
 ---@field indent integer
@@ -179,10 +189,17 @@ end
 function Lexer:quoted()
 	local quote = self:next_char()
 	local chars = {}
-	while self:peek_char() and self:peek_char() ~= quote do
-		table.insert(chars, self:next_char())
+	while self:peek_char() do -- and self:peek_char() ~= quote do
+		local char = self:next_char()
+		if quote == "'" and char == "'" and self:peek_char() == "'" then
+			table.insert(chars, self:next_char())
+		elseif char == quote then
+			break
+		else
+			table.insert(chars, char)
+		end
+		-- end
 	end
-	self:next_char()
 	return table.concat(chars, "")
 end
 
@@ -275,7 +292,7 @@ function Lexer:token()
 				error("unknown directive")
 			end
 			return self:create_token("DIRECTIVE", "%", row, col)
-		elseif char == "-" and self:peek_char(2) == "-" and self:peek_char(3) == "-" then
+		elseif self.col == 0 and self:match("---") then -- char == "-" and self:peek_char(2) == "-" and self:peek_char(3) == "-" then
 			local row, col = self.row, self.col
 			self:next_char(3)
 			return self:create_token("START_DOC", "---", row, col)
@@ -389,7 +406,7 @@ function Lexer:token()
 				end
 				table.insert(chars, self:next_char())
 			end
-			return self:create_token("VAL", trim(table.concat(chars, "")), row, col)
+			return self:create_token("VAL", rtrim(table.concat(chars, "")), row, col)
 		end
 	end
 end
@@ -570,6 +587,33 @@ function Parser:new(lexer)
 	return o
 end
 
+function Parser:value(str)
+	if string.match(str, "\\x%x%x") then
+		str = string.gsub(str, "\\x(%x%x)", function(hex)
+			return string.char(tonumber(hex, 16))
+		end)
+	end
+	if string.find(str, "\\u%x%x%x%x") then
+		str = string.gsub(str, "\\u(%x%x%x%x)", function(hex)
+			return utf8(tonumber(hex, 16))
+		end)
+	end
+	if string.find(str, "\\([b|t|r])") then
+		str = string.gsub(str, "\\([b|t|r])", function(hex)
+			if hex == "b" then
+				return utf8(tonumber("08", 16))
+			elseif hex == "t" then
+				return utf8(tonumber("09", 16))
+			elseif hex == "r" then
+				return utf8(tonumber("0D", 16))
+			else
+				error("unknown character: " .. hex)
+			end
+		end)
+	end
+	return str
+end
+
 function Parser:push(target, tokens)
 	if not tokens then
 		table.insert(target, { kind = "VAL", val = "" })
@@ -585,13 +629,16 @@ end
 function Parser:quoted(token)
 	local res
 	for line in string.gmatch(token.val, "([^\n]*)\n?") do
+		if token.type == '"' then
+			line = string.gsub(line, "\\n", "\n")
+		end
 		if res then
 			res = res .. " " .. trim(line)
 		else
 			res = line
 		end
 	end
-	return trim(res)
+	return rtrim(res)
 end
 
 function Parser:folded(token, indent, folded)
@@ -616,7 +663,7 @@ function Parser:folded(token, indent, folded)
 				break
 			elseif not folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek().val <= indent then
 				break
-			elseif folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek().val < indent then
+			elseif folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek(2).val < indent then
 				break
 			end
 			self.lexer:next()
@@ -640,6 +687,7 @@ function Parser:literal(token, indent)
 		sep = " "
 	end
 	local nl = false
+	local indented = false
 	while next do
 		if next.kind == "SEP" then
 			if self.lexer:peek().kind == "NL" then
@@ -663,8 +711,13 @@ function Parser:literal(token, indent)
 			end
 			nl = false
 			if next_indent > final_indent then
-				table.insert(lines, "\n" .. string.rep(" ", next_indent - final_indent) .. next.val)
+				if not indented and token.kind == "LITERAL" then
+					table.insert(lines, "\n")
+				end
+				table.insert(lines, string.rep(" ", next_indent - final_indent) .. next.val .. "\n")
+				indented = true
 			else
+				indented = false
 				table.insert(lines, next.val)
 			end
 		end
@@ -672,7 +725,7 @@ function Parser:literal(token, indent)
 	end
 	-- collect the result
 	local result = table.concat(lines, "")
-	if token.chomping ~= "STRIP" then
+	if token.chomping ~= "STRIP" and string.sub(result, #result) ~= "\n" then
 		result = result .. "\n"
 	end
 	return result
@@ -699,7 +752,7 @@ function Parser:block_node(indent, folded)
 			end
 		elseif token.kind == "QUOTED" then
 			local res = self:quoted(token)
-			local val = { kind = "VAL", val = trim(res), tag = self.tagref, type = '"' }
+			local val = { kind = "VAL", val = res, tag = self.tagref, type = token.type }
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				self.lexer:next()
 			end
@@ -773,7 +826,9 @@ function Parser:block_node(indent, folded)
 end
 
 function Parser:parse_tag(tag)
-	if string.match(tag, "^![%a%d]*") then
+	if string.match(tag, "^!![%a%d]*") then
+		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
+	elseif string.match(tag, "^![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 2) .. ">"
 	else
 		error("unknwon tag")
@@ -782,7 +837,7 @@ end
 
 function Parser:flow_map(indent)
 	local tokens = {}
-	table.insert(tokens, { kind = "+MAP {}" })
+	table.insert(tokens, { kind = "+MAP {}", anchor = table.remove(self.anchor) })
 	self.lexer:next()
 	local token = self.lexer:peek()
 	while token do
@@ -1079,9 +1134,6 @@ function Parser:map(indent, key_token)
 			self.lexer:next()
 			local val = self:block_node(self.lexer:peek().col, true)
 			self:push(tokens, val)
-			-- assert(self.lexer:peek().kind == "SEP")
-			-- self.lexer:next()
-			-- error("found complex: " .. self.lexer:peek().kind)
 		elseif token.kind == "START_DOC" or token.kind == "END_DOC" then
 			self.lexer:rewind()
 			break
@@ -1231,7 +1283,7 @@ function Parser:__tostring()
 					(t.tag and t.tag.val or ""),
 					(t.anchor and "&" .. t.anchor.val .. " " or ""),
 					(t.type and t.type or ":"),
-					escape((t.val or ""))
+					escape(self:value((t.val or "")))
 				)
 			)
 		elseif t.kind == "ALIAS" then

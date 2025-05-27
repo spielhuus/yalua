@@ -73,7 +73,7 @@ describe("Test flow samples", function()
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex empty key in map #subject", function()
+	it("should lex empty key in map", function()
 		local doc = [[
 - [ : empty key ]
 - [: another empty key]

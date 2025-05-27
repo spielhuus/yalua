@@ -844,6 +844,31 @@ mom: happy
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a document with secondary tag", function()
+		local doc = [[
+# Ordered maps are represented as
+# A sequence of mappings, with
+# each mapping having one key
+--- !!omap
+- some: map
+]]
+		local expect = [[
++STR
++DOC ---
++SEQ <tag:yaml.org,2002:omap>
++MAP
+=VAL :some
+=VAL :map
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a map with empty characters and tabs", function()
 		local doc = [[
 

@@ -2,6 +2,63 @@ local assert = require("luassert")
 local yalua = require("yalua")
 
 describe("Test the scalar types", function()
+	it("should lex a double quoted scalar", function()
+		local doc = [[
+quoted: "quoted scalar"
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL "quoted scalar
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a sinlge quoted scalar", function()
+		local doc = [[
+quoted: 'quoted scalar'
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL 'quoted scalar
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a sinlge quoted scalar with escaped quote", function()
+		local doc = [[
+quoted: 'quoted ''scalar'''
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL 'quoted 'scalar'
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a folded scalar", function()
 		local doc = [[
 strip: |
@@ -162,7 +219,8 @@ strip: >
 		assert(result)
 		assert.are.same(expect, result)
 	end)
-	it("should lex map with line prefix skip", function()
+
+	it("should lex map with line prefix", function()
 		local doc = [[
 plain: text
   lines
