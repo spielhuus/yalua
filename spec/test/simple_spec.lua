@@ -314,6 +314,77 @@ national:
 		assert.are.same(expect, result)
 	end)
 
+	it("should map with nested seq and literal", function()
+		local doc = [[
+name: 
+  - list list 
+  - |
+    test
+  - list 2
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :name
++SEQ
+=VAL :list list
+=VAL |test\n
+=VAL :list 2
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should map with nested seq and map and literal", function()
+		local doc = [[
+Stack:
+- file: TopClass.py
+  line: 23
+  code: |
+    x = MoreObject("345\n")
+- file: MoreClass.py
+  line: 58
+  code: |-
+    foo = bar
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :Stack
++SEQ
++MAP
+=VAL :file
+=VAL :TopClass.py
+=VAL :line
+=VAL :23
+=VAL :code
+=VAL |x = MoreObject("345\\n")\n
+-MAP
++MAP
+=VAL :file
+=VAL :MoreClass.py
+=VAL :line
+=VAL :58
+=VAL :code
+=VAL |foo = bar
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should parse a scalar with quotes", function()
 		local doc = [[
 key: "this is a quoted string"

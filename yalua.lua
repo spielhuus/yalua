@@ -326,6 +326,7 @@ function Lexer:token()
 			local row, col = self.row, self.col
 			return self:create_token("COMPLEX", self:next_char(), row, col)
 		elseif char == "|" then
+			-- TODO: use folding attrs
 			local row, col = self.row, self.col
 			local token = self:create_token("FOLDED", self:next_char(), row, col)
 			-- TODO: use folding_attrs
@@ -584,6 +585,8 @@ function Parser:new(lexer)
 
 	o.state = {}
 	o.anchor = {}
+
+	o.index = 0
 	return o
 end
 
@@ -611,7 +614,17 @@ function Parser:value(str)
 			end
 		end)
 	end
-	return str
+	if str == "true" then
+		return true
+	elseif str == "false" then
+		return false
+	elseif str.match(str, "^0x") then
+		return str
+	elseif tonumber(str) then
+		return tonumber(str)
+	else
+		return str
+	end
 end
 
 function Parser:push(target, tokens)
@@ -695,6 +708,7 @@ function Parser:literal(token, indent)
 				table.insert(lines, "\n")
 				nl = true
 			elseif #next.val < final_indent then
+				self.lexer:rewind()
 				break
 			end
 			next_indent = #next.val
@@ -811,8 +825,10 @@ function Parser:block_node(indent, folded)
 			end
 		elseif token.kind == "COMPLEX" then
 			assert(self.lexer:peek().kind == "SEP")
+			local tagref = self.tagref
+			self.tagref = nil
 			local key = self:block_node(self.lexer:peek().col, false)
-			return self:map(indent, key)
+			return self:map(indent, key, tagref)
 		elseif token.kind == "NL" then
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				local next_indent = #self.lexer:next().val
@@ -826,7 +842,9 @@ function Parser:block_node(indent, folded)
 end
 
 function Parser:parse_tag(tag)
-	if string.match(tag, "^!![%a%d]*") then
+	if string.match(tag, "^!<.*>") then
+		return tag
+	elseif string.match(tag, "^!![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
 	elseif string.match(tag, "^![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 2) .. ">"
@@ -1038,9 +1056,9 @@ function Parser:sequence(indent)
 	return tokens
 end
 
-function Parser:map(indent, key_token)
+function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could this be done with the key_token
 	local tokens = {}
-	table.insert(tokens, { kind = "+MAP", tag = self.tagref, anchor = table.remove(self.anchor) })
+	table.insert(tokens, { kind = "+MAP", tag = (tag and tag or self.tagref), anchor = table.remove(self.anchor) })
 	self.tagref = nil
 	-- self.anchor = nil
 	local token = self.lexer:next()
@@ -1060,6 +1078,7 @@ function Parser:map(indent, key_token)
 		table.insert(self.anchor, self.lexer:next())
 	end
 	self:push(tokens, key_token)
+	local vals = 0
 	while token do
 		if token.kind == "VAL" then
 			local val, mes = self:folded(token, indent, false)
@@ -1067,7 +1086,7 @@ function Parser:map(indent, key_token)
 				return val, mes
 			end
 			table.insert(tokens, { kind = "VAL", val = val, anchor = table.remove(self.anchor) })
-			-- self.anchor = nil
+			vals = (vals + 1) % 2
 		elseif token.kind == "SEP" then
 			if #token.val < indent then
 				self.lexer:rewind()
@@ -1081,7 +1100,7 @@ function Parser:map(indent, key_token)
 			-- skip the separator after the colon
 			-- TODO: validate that it is not tab
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
-				local sep = self.lexer:next()
+				local _ = self.lexer:next()
 			end
 			if
 				self.lexer:peek()
@@ -1108,6 +1127,7 @@ function Parser:map(indent, key_token)
 					elseif next_indent == indent and self.lexer:peek().kind == "VAL" then
 						table.insert(tokens, { kind = "VAL", val = "" })
 						has_empty_val = true
+						vals = (vals + 1) % 2
 					end
 				end
 				if not has_empty_val then
@@ -1122,18 +1142,24 @@ function Parser:map(indent, key_token)
 								)
 						elseif #sep.val < indent then
 							self:push(tokens, res)
+							vals = (vals + 1) % 2
 							break
 						end
 						self.lexer:next()
 					end
 					self:push(tokens, res)
+					vals = (vals + 1) % 2
 				end
 			end
 		elseif token.kind == "COMPLEX" then
+			if vals == 0 then
+				table.insert(tokens, { kind = "VAL", val = "" })
+			end
 			assert(self.lexer:peek().kind == "SEP")
 			self.lexer:next()
 			local val = self:block_node(self.lexer:peek().col, true)
 			self:push(tokens, val)
+			vals = 0
 		elseif token.kind == "START_DOC" or token.kind == "END_DOC" then
 			self.lexer:rewind()
 			break
@@ -1146,12 +1172,17 @@ function Parser:map(indent, key_token)
 			and #self.lexer:peek(2).val == indent
 		then
 			table.insert(tokens, { kind = "VAL", val = "", anchor = token })
+			vals = (vals + 1) % 2
 		else
 			self.lexer:rewind()
 			local child = self:block_node(indent)
 			self:push(tokens, child)
+			vals = (vals + 1) % 2
 		end
 		token = self.lexer:next()
+	end
+	if vals == 0 then
+		table.insert(tokens, { kind = "VAL", val = "" })
 	end
 	table.insert(tokens, { kind = "-MAP" })
 	table.remove(self.state)
@@ -1304,6 +1335,85 @@ function Parser:__tostring()
 	return table.concat(res, "\n")
 end
 
+--- crewate the object
+
+function Parser:next()
+	self.index = self.index + 1
+	if self.index > #self.tokens then
+		return nil
+	else
+		return self.tokens[self.index]
+	end
+end
+
+function Parser:decode_map()
+	local next = self:next()
+	local res = {}
+	local key
+	while next do
+		if next.kind == "VAL" then
+			if not key then
+				key = self:value(next.val)
+			else
+				res[key] = self:value(next.val)
+				key = nil
+			end
+		elseif next.kind == "-MAP" then
+			break
+		elseif string.match(next.kind, "^+MAP") then
+			local val = self:decode_map()
+			if not key then
+				key = val
+			else
+				res[key] = val
+				key = nil
+			end
+		elseif string.match(next.kind, "^+SEQ") then
+			local val = self:decode_seq()
+			if not key then
+				key = val
+			else
+				res[key] = val
+				key = nil
+			end
+		end
+		next = self:next()
+	end
+	return res
+end
+
+function Parser:decode_seq()
+	local next = self:next()
+	local res = {}
+	while next do
+		if next.kind == "VAL" then
+			table.insert(res, self:value(next.val))
+		elseif next.kind == "-SEQ" then
+			break
+		elseif string.match(next.kind, "^+SEQ") then
+			table.insert(res, self:decode_seq())
+		elseif string.match(next.kind, "^+MAP") then
+			table.insert(res, self:decode_map())
+		end
+		next = self:next()
+	end
+	return res
+end
+
+function Parser:decode()
+	local res
+	local next = self:next()
+	while next do
+		if string.match(next.kind, "^+SEQ") then
+			res = self:decode_seq()
+		elseif string.match(next.kind, "^+MAP") then
+			res = self:decode_map()
+		end
+		next = self:next()
+	end
+	return res
+end
+
 return {
 	html = function(content)
 		local lexer = Lexer:new(content)
@@ -1320,5 +1430,32 @@ return {
 			return res, mes
 		end
 		return tostring(parser)
+	end,
+	decode = function(content)
+		local lexer = Lexer:new(content)
+		lexer:lexme()
+		local parser = Parser:new(lexer)
+		local res, mes = parser:parse()
+		if not res then
+			return res, mes
+		end
+		return parser:decode()
+	end,
+	parse = function(path)
+		print("open file: " .. path)
+		local file = io.open(path, "r")
+		if not file then
+			return nil, "can not open file " .. path
+		end
+		local content = file:read("*all")
+		file:close()
+		local lexer = Lexer:new(content)
+		lexer:lexme()
+		local parser = Parser:new(lexer)
+		local res, mes = parser:parse()
+		if not res then
+			return res, mes
+		end
+		return parser:decode()
 	end,
 }

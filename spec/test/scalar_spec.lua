@@ -295,30 +295,51 @@ plain: |
 		assert.are.same(expect, result)
 	end)
 
-	-- 	it("should lex scalar with question marks", function()
-	-- 		local doc = [[
-	-- yaml: question?mark
-	-- yodl: question ? mark
-	-- lufl: [question ? mark]
-	-- ]]
-	-- 		local expect = [[
-	-- +STR
-	-- +DOC
-	-- +MAP
-	-- =VAL :yaml
-	-- =VAL :question?mark
-	-- =VAL :yodl
-	-- =VAL :question ? mark
-	-- =VAL :lufl
-	-- +SEQ []
-	-- =VAL :question ? mark
-	-- -SEQ
-	-- -MAP
-	-- -DOC
-	-- -STR
-	-- ]]
-	-- local result = yalua.dump(doc)
-	-- assert(result)
-	-- assert.are.same(expect, result)
-	-- 	end)
+	it("should lex literal with yaml content, #subject", function()
+		local doc = [[
+yaml: |
+  yodl: question ? mark
+  lufl: [question ? mark]
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :yaml
+=VAL |yodl: question ? mark\nlufl: [question ? mark]\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex scalar with question marks", function()
+		local doc = [[
+yaml: question?mark
+yodl: question ? mark
+lufl: [question ? mark]
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :yaml
+=VAL :question?mark
+=VAL :yodl
+=VAL :question ? mark
+=VAL :lufl
++SEQ []
+=VAL :question ? mark
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 end)
