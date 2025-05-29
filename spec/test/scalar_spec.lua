@@ -249,7 +249,101 @@ block: |
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex wrong literal attribute #skip", function()
+	it("should lex folded multiline scalar", function()
+		local doc = [[
+foo: >
+  content
+  lines
+
+    other lines
+  end
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :foo
+=VAL >content lines\n\n  other lines\nend\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex multiline literal with empty line #subject", function()
+		local doc = [[
+yaml: |
+  foo: 1
+
+  bar: 2
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :yaml
+=VAL |foo: 1\n\nbar: 2\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex multiline literal", function()
+		local doc = [[
+foo: |
+  content
+  lines
+
+    other lines
+  end
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :foo
+=VAL |content\nlines\n\n  other lines\nend\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex multiline literal with indentation hint", function()
+		local doc = [[
+foo: |2
+    content
+    lines
+
+      other lines
+    end
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :foo
+=VAL |  content\n  lines\n\n    other lines\n  end\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex literal with literal content", function()
 		local doc = [[
 plain: |
   plain: |x
@@ -295,7 +389,7 @@ plain: |
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex literal with yaml content, #subject", function()
+	it("should lex literal with yaml content", function()
 		local doc = [[
 yaml: |
   yodl: question ? mark
