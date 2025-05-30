@@ -359,7 +359,7 @@ function Lexer:token()
 			local row, col = self.row, self.col
 			local type = self:peek_char()
 			return self:create_token("QUOTED", self:quoted(), row, col, type)
-		elseif char == "-" or char == ":" and (self:peek_char(2) == " " or self:peek_char(2) == "\n") then
+		elseif (char == "-" or char == ":") and (self:peek_char(2) == " " or self:peek_char(2) == "\n") then
 			local row, col = self.row, self.col
 			char = self:next_char()
 			if char == "-" then
@@ -792,7 +792,9 @@ function Parser:block_node(indent, folded)
 			else
 				local anchor = table.remove(self.anchor)
 				local val = self:folded(token, indent, folded)
-				return { { kind = "VAL", val = val, tag = self.tagref, anchor = anchor } }
+				local tagref = self.tagref
+				self.tagref = nil
+				return { { kind = "VAL", val = val, tag = tagref, anchor = anchor } }
 			end
 		elseif token.kind == "QUOTED" then
 			local res = self:quoted(token)

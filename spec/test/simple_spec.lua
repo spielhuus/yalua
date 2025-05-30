@@ -940,7 +940,7 @@ mom: happy
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a document with named tag #subject", function()
+	it("should lex a document with named tag", function()
 		local doc = [[
 %TAG !e! tag:example.com,2000:app/
 ---
