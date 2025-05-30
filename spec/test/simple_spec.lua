@@ -940,6 +940,24 @@ mom: happy
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a document with named tag #subject", function()
+		local doc = [[
+%TAG !e! tag:example.com,2000:app/
+---
+!e!foo "bar"
+]]
+		local expect = [[
++STR
++DOC ---
+=VAL <tag:example.com,2000:app/foo> "bar
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a map with empty characters and tabs", function()
 		local doc = [[
 

@@ -142,7 +142,7 @@ end
 
 function Lexer:to_eol()
 	local chars = {}
-	while self:peek_char() ~= "\n" do
+	while self:peek_char() and self:peek_char() ~= "\n" do
 		table.insert(chars, self:next_char())
 	end
 	return table.concat(chars, "")
@@ -272,9 +272,6 @@ end
 function Lexer:token()
 	while self:peek_char() do
 		local char = self:peek_char()
-		if self.is_text then
-			print("is_text")
-		end
 		if self.is_text and self:peek_char() ~= " " and self:peek_char() ~= "\n" then
 			local row, col = self.row, self.col
 			return self:create_token("VAL", rtrim(self:to_eol()), row, col)
@@ -297,7 +294,20 @@ function Lexer:token()
 					elseif self:peek_char() == "!" then
 						error("second tag")
 					else
-						error("named")
+						local tag_name = ""
+						while self:peek_char() and self:peek_char() ~= "!" do
+							tag_name = tag_name .. self:next_char()
+						end
+						self:next_char(2)
+						local uri = self:directive_tag_uri()
+						return {
+							kind = "DIRECTIVE",
+							type = "NAMED_TAG",
+							name = tag_name,
+							val = uri,
+							row = row,
+							col = col,
+						}
 					end
 				else
 					error("TAG: '" .. self:next_char() .. "'")
@@ -381,14 +391,12 @@ function Lexer:token()
 		elseif char == " " then
 			local row, col = self.row, self.col
 			local sep = { self:next_char() }
-			while self:peek_char() == " " do
+			while self:peek_char() and self:peek_char() == " " do
 				-- TODO: here could be a comment
 				table.insert(sep, self:next_char())
 			end
 			if col == 0 then
-				print("check next: " .. escape(self:peek_char()))
 				if self.is_text and #sep <= self.is_text then
-					print("unset is text")
 					self.is_text = nil
 				end
 				self.indent = #sep
@@ -403,7 +411,7 @@ function Lexer:token()
 		else
 			local row, col = self.row, self.col
 			local chars = { self:next_char() }
-			while self:peek_char() ~= "\n" do
+			while self:peek_char() and self:peek_char() ~= "\n" do
 				-- skip the comment
 				if (self:peek_char() == " " or self:peek_char() == "\t") and self:peek_char(2) == "#" then
 					while self:peek_char() and self:peek_char() ~= "\n" do
@@ -430,14 +438,12 @@ function Lexer:lexme()
 		table.insert(self.tokens, self:create_token("SEP", "", self.row, 0))
 	end
 	while token do
-		print("+ " .. token.kind .. " " .. (token.val and token.val or ""))
 		table.insert(self.tokens, token)
 		if token.kind == "NL" then
 			if self:peek_char() then
 				if self:peek_char() ~= " " then
 					self.indent = 0
 					if self:peek_char() ~= "\n" then
-						print("unset is_text " .. escape(self:peek_char()))
 						self.is_text = nil
 					end
 					table.insert(self.tokens, self:create_token("SEP", "", self.row, 0))
@@ -868,6 +874,9 @@ end
 function Parser:parse_tag(tag)
 	if string.match(tag, "^!<.*>") then
 		return tag
+	elseif string.match(tag, "^![%a%d]+![%a%d]*") then
+		local name, uri = string.match(tag, "^!([%a%d]*)!([%a%d]*)")
+		return "<" .. self.named_tags[name] .. uri .. ">"
 	elseif string.match(tag, "^!![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
 	elseif string.match(tag, "^![%a%d]*") then
@@ -1255,6 +1264,9 @@ function Parser:directive()
 	while token do
 		if token.type == "GLOBAL_TAG" then
 			self.global_tag = self.lexer:next().val
+		elseif token.type == "NAMED_TAG" then
+			token = self.lexer:next()
+			self.named_tags[token.name] = token.val
 		elseif token.kind == "DIRECTIVE" then
 			self.lexer:next()
 			token = self.lexer:peek()
@@ -1335,7 +1347,7 @@ function Parser:__tostring()
 				string.format(
 					"=%s %s%s%s%s",
 					t.kind,
-					(t.tag and t.tag.val or ""),
+					(t.tag and self:parse_tag(t.tag.val) .. " " or ""),
 					(t.anchor and "&" .. t.anchor.val .. " " or ""),
 					(t.type and t.type or ":"),
 					escape(self:value((t.val or "")))
@@ -1466,7 +1478,6 @@ return {
 		return parser:decode()
 	end,
 	parse = function(path)
-		print("open file: " .. path)
 		local file = io.open(path, "r")
 		if not file then
 			return nil, "can not open file " .. path
