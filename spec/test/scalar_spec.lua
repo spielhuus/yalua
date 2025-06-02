@@ -273,7 +273,7 @@ foo: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex multiline literal with empty line #subject", function()
+	it("should lex multiline literal with empty line", function()
 		local doc = [[
 yaml: |
   foo: 1
@@ -364,7 +364,7 @@ plain: |
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex literal with yaml content and special characters #skip", function()
+	it("should lex literal with yaml content and special characters", function()
 		local doc = [[
 - yaml: |
     --- |1-∎

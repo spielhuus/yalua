@@ -246,6 +246,79 @@ function Lexer:directive_tag_uri()
 	return table.concat(tag_uri, "")
 end
 
+function Lexer:peek_sep()
+	local index = 2
+	while self:peek_char(index) and self:peek_char(index) == " " do
+		index = index + 1
+	end
+	return index - 2
+end
+
+function Lexer:sep()
+	local row, col = self.row, self.col
+	local sep = { self:next_char() }
+	while self:peek_char() and self:peek_char() == " " do
+		-- TODO: here could be a comment
+		table.insert(sep, self:next_char())
+	end
+	if col == 0 then
+		self.indent = #sep
+	end
+	return self:create_token("SEP", table.concat(sep, ""), row, col)
+end
+
+function Lexer:is_empty_line()
+	local index = 2
+	while self:peek_char(index) do
+		if self:peek_char(index) == " " then
+			index = index + 1
+		elseif self:peek_char(index) == "\n" then
+			return true
+		else
+			return false
+		end
+	end
+	return false
+end
+
+function Lexer:folded()
+	local lines = {}
+	local last_indent
+	local final_indent
+	assert(self:peek_char() == "\n")
+	self:next_char()
+	while self:peek_char() do
+		if self:peek_char() == " " then
+			local sep = self:sep()
+			last_indent = #sep.val
+		elseif self:peek_char() == "\n" then
+			-- self:next_char()
+			if self:is_empty_line() then
+				if self:peek_char(2) == " " then
+					self:next_char()
+					local sep = self:sep()
+					table.insert(lines, { indent = #sep.val, val = "" })
+					assert(self:peek_char() == "\n")
+				else
+					assert(self:peek_char() == "\n")
+					self:next_char()
+					table.insert(lines, { indent = 0, val = "" })
+				end
+			elseif self:peek_sep() < final_indent then
+				break
+			else
+				self:next_char()
+			end
+		else
+			if not final_indent then
+				final_indent = last_indent
+			end
+			table.insert(lines, { indent = last_indent, val = self:to_eol() })
+		end
+	end
+	return final_indent, lines
+end
+
 function Lexer:folding_attrs(type)
 	local row, col = self.row, self.col
 	local token = self:create_token(type, self:next_char(), row, col)
@@ -272,10 +345,7 @@ end
 function Lexer:token()
 	while self:peek_char() do
 		local char = self:peek_char()
-		if self.is_text and self:peek_char() ~= " " and self:peek_char() ~= "\n" then
-			local row, col = self.row, self.col
-			return self:create_token("VAL", rtrim(self:to_eol()), row, col)
-		elseif char == "%" then
+		if char == "%" then
 			local row, col = self.row, self.col
 			self:next_char()
 			local name = self:to_sep()
@@ -316,7 +386,7 @@ function Lexer:token()
 				error("unknown directive")
 			end
 			return self:create_token("DIRECTIVE", "%", row, col)
-		elseif self.col == 0 and self:match("---") then -- char == "-" and self:peek_char(2) == "-" and self:peek_char(3) == "-" then
+		elseif self.col == 0 and self:match("---") then
 			local row, col = self.row, self.col
 			self:next_char(3)
 			return self:create_token("START_DOC", "---", row, col)
@@ -350,11 +420,17 @@ function Lexer:token()
 			local row, col = self.row, self.col
 			return self:create_token("COMPLEX", self:next_char(), row, col)
 		elseif char == "|" then
-			self.is_text = self.indent
-			return self:folding_attrs("LITERAL")
+			local token = self:folding_attrs("LITERAL")
+			local indent, lines = self:folded()
+			token.indent = indent
+			token.lines = lines
+			return token
 		elseif char == ">" then
-			self.is_text = self.indent
-			return self:folding_attrs("FOLDED")
+			local token = self:folding_attrs("FOLDED")
+			local indent, lines = self:folded()
+			token.indent = indent
+			token.lines = lines
+			return token
 		elseif char == "'" or char == '"' then
 			local row, col = self.row, self.col
 			local type = self:peek_char()
@@ -389,6 +465,7 @@ function Lexer:token()
 				self:next_char()
 			end
 		elseif char == " " then
+			-- TODO: use sep function
 			local row, col = self.row, self.col
 			local sep = { self:next_char() }
 			while self:peek_char() and self:peek_char() == " " do
@@ -396,9 +473,6 @@ function Lexer:token()
 				table.insert(sep, self:next_char())
 			end
 			if col == 0 then
-				if self.is_text and #sep <= self.is_text then
-					self.is_text = nil
-				end
 				self.indent = #sep
 			end
 			return self:create_token("SEP", table.concat(sep, ""), row, col)
@@ -443,9 +517,6 @@ function Lexer:lexme()
 			if self:peek_char() then
 				if self:peek_char() ~= " " then
 					self.indent = 0
-					if self:peek_char() ~= "\n" then
-						self.is_text = nil
-					end
 					table.insert(self.tokens, self:create_token("SEP", "", self.row, 0))
 				end
 			else
@@ -709,69 +780,49 @@ function Parser:folded(token, indent, folded)
 end
 
 function Parser:literal(token, indent)
+	-- print("LITERAL: " .. to_string(token))
 	local lines
-	local next = self.lexer:next()
-	assert(self.lexer:peek().kind == "SEP", self.lexer:peek().kind)
-	local final_indent
-	local next_indent = #self.lexer:next().val
 	local sep
 	if token.kind == "LITERAL" then
 		sep = "\n"
 	else
 		sep = " "
 	end
-	local nl = false
-	local indented = false
-	while next do
-		if next.kind == "SEP" then
-			if self.lexer:peek().kind == "NL" then
-				-- empty lines are convered to line breaks
-				table.insert(lines, "\n")
-				nl = true
-			elseif #next.val < final_indent then
-				self.lexer:rewind()
-				break
-			end
-			next_indent = #next.val
-		elseif next.kind == "VAL" then
-			if not lines then
-				lines = {}
-			elseif token.kind == "LITERAL" then
-				table.insert(lines, sep)
-			-- elseif indented and token.kind == "FOLDED" and lines[#lines] ~= "\n" then
-			-- 	table.insert(lines, "\n")
-			-- 	indented = false
-			elseif not nl and not indented and next_indent <= final_indent then
-				table.insert(lines, sep)
-			end
-			if not final_indent then
-				final_indent = next_indent
-			end
-			nl = false
-			if next_indent > final_indent then
-				if token.kind == "FOLDED" then
-					table.insert(lines, "\n")
-				end
-				table.insert(
-					lines,
-					string.rep(" ", (token.hint and next_indent - token.hint or next_indent - final_indent)) .. next.val
-				)
-				indented = true
+	local indent = (token.hint and token.hint or token.indent)
+	local last_empty = false
+	local last_indent = token.indent
+	for _, line in ipairs(token.lines) do
+		if lines then
+			if line.val == "" and token.kind == "FOLDED" then
+				table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
+				last_empty = true
+				last_indent = indent
+			elseif line.indent > indent and token.kind == "FOLDED" then
+				table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
+				last_empty = false
+				last_indent = line.indent
+			elseif last_empty and token.kind == "FOLDED" then
+				table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
+				last_empty = false
 			else
-				if indented and token.kind == "FOLDED" then
-					table.insert(lines, "\n")
+				if last_indent > indent then
+					table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
+					last_indent = indent
+				else
+					table.insert(lines, sep .. string.rep(" ", line.indent - indent) .. line.val)
 				end
-				indented = false
-				table.insert(lines, string.rep(" ", token.hint and token.hint or 0) .. next.val)
 			end
+		else
+			lines = {}
+			table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
 		end
-		next = self.lexer:next()
 	end
-	-- collect the result
+	-- -- collect the result
 	local result = table.concat(lines, "")
 	if token.chomping ~= "STRIP" and string.sub(result, #result) ~= "\n" then
 		result = result .. "\n"
 	end
+	-- return result
 	return result
 end
 
