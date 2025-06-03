@@ -71,6 +71,15 @@ local function utf8(codepoint)
 	end
 end
 
+---decode the url encoded string
+local function url_decode(str)
+	str = string.gsub(str, "%%(%x%x)", function(hex)
+		return string.char(tonumber(hex, 16))
+	end)
+	str = string.gsub(str, "+", " ")
+	return str
+end
+
 ---@class Token
 ---@field kind string
 ---@field indent integer
@@ -944,9 +953,9 @@ end
 function Parser:parse_tag(tag)
 	if string.match(tag, "^!<.*>") then
 		return tag
-	elseif string.match(tag, "^![%a%d]+![%a%d]*") then
-		local name, uri = string.match(tag, "^!([%a%d]*)!([%a%d]*)")
-		return "<" .. self.named_tags[name] .. uri .. ">"
+	elseif string.match(tag, "^![%a%d]+![%%%a%d]*") then
+		local name, uri = string.match(tag, "^!([%a%d]*)!([%%%a%d]*)")
+		return "<" .. self.named_tags[name] .. url_decode(uri) .. ">"
 	elseif string.match(tag, "^!![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
 	elseif string.match(tag, "^![%a%d]*") then
@@ -1208,6 +1217,11 @@ function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could 
 			-- TODO: validate that it is not tab
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				local _ = self.lexer:next()
+			end
+			-- it is an empty key
+			if vals == 1 then
+				table.insert(tokens, { kind = "VAL", val = "", anchor = table.remove(self.anchor) })
+				vals = (vals + 1) % 2
 			end
 			if
 				self.lexer:peek()
