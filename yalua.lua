@@ -752,13 +752,27 @@ function Parser:folded(token, indent, folded)
 	table.insert(lines, token.val)
 	while self.lexer:peek() do
 		if self.lexer:peek().kind == "VAL" then
-			table.insert(lines, self.lexer:next().val)
+			if lines[#lines] and lines[#lines] ~= "\n" then
+				table.insert(lines, " " .. self.lexer:next().val)
+			else
+				table.insert(lines, self.lexer:next().val)
+			end
 			if self.lexer:peek().kind == "COLON" then
 				return nil, self.lexer:error("invalid multiline plain key", self.lexer:peek())
 			end
 		elseif self.lexer:peek().kind == "SEP" then
 			if not folded and #self.lexer:peek().val <= indent then
-				break
+				if self.lexer:peek(2) and self.lexer:peek(2).kind == "NL" then
+					table.insert(lines, "\n")
+					self.lexer:next(2)
+				elseif
+					self.lexer:peek(2)
+					and self.lexer:peek(2).kind == "VAL"
+					and trim(self.lexer:peek(2).val) == ""
+				then
+				else
+					break
+				end
 			elseif folded and #self.lexer:peek().val < indent then
 				break
 			end
@@ -776,7 +790,7 @@ function Parser:folded(token, indent, folded)
 			break
 		end
 	end
-	return table.concat(lines, " ")
+	return table.concat(lines, "")
 end
 
 function Parser:literal(token, indent)
@@ -794,6 +808,9 @@ function Parser:literal(token, indent)
 	for _, line in ipairs(token.lines) do
 		if lines then
 			if line.val == "" and token.kind == "FOLDED" then
+				if last_indent > indent then
+					table.insert(lines, "\n")
+				end
 				table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
 				last_empty = true
 				last_indent = indent
@@ -933,7 +950,11 @@ function Parser:parse_tag(tag)
 	elseif string.match(tag, "^!![%a%d]*") then
 		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
 	elseif string.match(tag, "^![%a%d]*") then
-		return "<" .. self.global_tag .. string.sub(tag, 2) .. ">"
+		if self.primary_tag then
+			return "<" .. self.primary_tag .. string.sub(tag, 2) .. ">"
+		else
+			return "<!" .. string.sub(tag, 2) .. ">"
+		end
 	else
 		error("unknwon tag")
 	end
@@ -1316,7 +1337,7 @@ function Parser:directive()
 	local token = self.lexer:peek()
 	while token do
 		if token.type == "GLOBAL_TAG" then
-			self.global_tag = self.lexer:next().val
+			self.primary_tag = self.lexer:next().val
 		elseif token.type == "NAMED_TAG" then
 			token = self.lexer:next()
 			self.named_tags[token.name] = token.val
