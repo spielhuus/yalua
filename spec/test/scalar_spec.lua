@@ -21,6 +21,27 @@ quoted: "quoted scalar"
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a double quoted scalar with empty line", function()
+		local doc = [[
+quoted: "quoted scalar
+   
+   second line"
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL "quoted scalar\nsecond line
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a sinlge quoted scalar", function()
 		local doc = [[
 quoted: 'quoted scalar'
@@ -50,6 +71,50 @@ quoted: 'quoted ''scalar'''
 +MAP
 =VAL :quoted
 =VAL 'quoted 'scalar'
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a quoted multiline scalar", function()
+		local doc = [[
+quoted: "first line
+ continues
+ 
+ second line"
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL "first line continues\nsecond line
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a quoted multiline scalar, with spaces at the end", function()
+		local doc = [[
+quoted: "first line
+ continues
+ 
+ second line "
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :quoted
+=VAL "first line continues\nsecond line 
 -MAP
 -DOC
 -STR
@@ -108,6 +173,32 @@ strip: |
 
   
   last line
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL |text\nanother line\n\n\nlast line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded multiline scalar with trailing empty lines", function()
+		local doc = [[
+strip: |
+  text
+  another line
+
+  
+  last line
+
+
 ]]
 		local expect = [[
 +STR

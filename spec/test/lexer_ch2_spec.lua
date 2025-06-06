@@ -199,7 +199,7 @@ describe("Test if the Lexer lexes", function()
 		end
 	)
 	it(
-		"should parse the Spec Example 2.27. Invoice, file: #UGM3 tags: #spec #tag #literal #mapping #sequence #alias #unknown-tag #skip",
+		"should parse the Spec Example 2.27. Invoice, file: #UGM3 tags: #spec #tag #literal #mapping #sequence #alias #unknown-tag",
 		function()
 			local input = load_file("./yaml-test-suite/data/UGM3/in.yaml")
 			local tree = load_file("./yaml-test-suite/data/UGM3/test.event")

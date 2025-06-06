@@ -190,7 +190,7 @@ seq: [ 1, 2, 3, { a: b, c: d }, 5, 6, 7 ]
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex map nested in sequence with anchors #skip", function()
+	it("should lex map nested in sequence with anchors", function()
 		local doc = [[
 seq: [ &a 1, 2, 3, { a: b, c: d }, 5, 6, 7 ]
 ]]
@@ -222,7 +222,7 @@ seq: [ &a 1, 2, 3, { a: b, c: d }, 5, 6, 7 ]
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex map nested in sequence with anchors in map #skip", function()
+	it("should lex map nested in sequence with anchors in map", function()
 		local doc = [[
 seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 ]]
@@ -363,7 +363,7 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 		assert.are.same(expect, result)
 	end)
 
-	it("should handle complex key with empty value #skip", function()
+	it("should handle complex key with empty value", function()
 		local doc = [[
 [
 ? foo
@@ -387,7 +387,7 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 		assert.are.same(expect, result)
 	end)
 
-	it("should handle complex multiline key #skip", function()
+	it("should handle complex multiline key", function()
 		local doc = [[
 [
 ? foo

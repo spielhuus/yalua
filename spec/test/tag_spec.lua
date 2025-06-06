@@ -33,4 +33,52 @@ describe("Test tag samples", function()
 		assert(result)
 		assert.are.same(expect, result)
 	end)
+
+	it("should lex multiple documents with one primary str tag", function()
+		local doc = [[
+---
+!foo "value"
+...
+%TAG ! tag:www.example.com/foo/
+---
+!foo "value"
+]]
+		local expect = [[
++STR
++DOC ---
+=VAL <!foo> "value
+-DOC ...
++DOC ---
+=VAL <tag:www.example.com/foo/foo> "value
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex multiple documents with one primary str tag in first document", function()
+		local doc = [[
+%TAG ! tag:www.example.com/foo/
+---
+!foo "value"
+...
+---
+!foo "value"
+]]
+		local expect = [[
++STR
++DOC ---
+=VAL <tag:www.example.com/foo/foo> "value
+-DOC ...
++DOC ---
+=VAL <!foo> "value
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 end)
