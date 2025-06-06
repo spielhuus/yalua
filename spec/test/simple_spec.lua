@@ -138,6 +138,28 @@ foo: bar
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex map with tab as separator", function()
+		local doc = [[
+value: key
+foo:  bar
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :value
+=VAL :key
+=VAL :foo
+=VAL :bar
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a map with newlines", function()
 		local doc = [[
 value: 
@@ -645,6 +667,107 @@ key: value
 +MAP
 =VAL :key
 =VAL :value
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a nested mapping", function()
+		local doc = [[
+---
+key:
+  foo: bar
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
+=VAL :key
++MAP
+=VAL :foo
+=VAL :bar
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a nested mapping and one space", function()
+		local doc = [[
+Not indented:
+ By one space: 
+    value
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :Not indented
++MAP
+=VAL :By one space
+=VAL :value
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a nested mapping and one space and literal", function()
+		local doc = [[
+Not indented:
+ By one space: |
+    By four
+      spaces
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :Not indented
++MAP
+=VAL :By one space
+=VAL |By four\n  spaces\n
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a nested mapping and one space and leading comments", function()
+		local doc = [[
+  # Leading comment line spaces are
+   # neither content nor indentation.
+    
+Not indented:
+ By one space: |
+    By four
+      spaces
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :Not indented
++MAP
+=VAL :By one space
+=VAL |By four\n  spaces\n
+-MAP
 -MAP
 -DOC
 -STR

@@ -476,6 +476,7 @@ parent:
 		assert(result)
 		assert.are.same(expect, result)
 	end)
+
 	it("it should lex a simple flow list", function()
 		local doc = [[
 - [name        , hr, avg  ]
@@ -502,6 +503,54 @@ parent:
 =VAL :0.288
 -SEQ
 -SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("it should lex a list with multiline val", function()
+		local doc = [[
+key: [mom
+is happy, dad too]
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key
++SEQ []
+=VAL :mom is happy
+=VAL :dad too
+-SEQ
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("it should lex a map with tags #subject", function()
+		local doc = [[
+key: {!!str string: value,
+ !!str foo: !!str bar}
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key
++MAP {}
+=VAL <tag:yaml.org,2002:str> :string
+=VAL :value
+=VAL <tag:yaml.org,2002:str> :foo
+=VAL <tag:yaml.org,2002:str> :bar
+-MAP
+-MAP
 -DOC
 -STR
 ]]

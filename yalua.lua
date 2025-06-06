@@ -449,9 +449,20 @@ function Lexer:token()
 			local row, col = self.row, self.col
 			local type = self:peek_char()
 			return self:create_token("QUOTED", self:quoted(), row, col, type)
-		elseif (char == "-" or char == ":") and (self:peek_char(2) == " " or self:peek_char(2) == "\n") then
+		elseif
+			(char == "-" or char == ":")
+			and (self:peek_char(2) == " " or self:peek_char(2) == "\n" or self:peek_char(2) == "\t")
+		then
 			local row, col = self.row, self.col
 			char = self:next_char()
+			-- skip whitespace
+			while self:peek_char() and self:peek_char() == " " or self:peek_char() == "\t" do
+				self:next_char()
+			end
+			-- check for comment
+			if self:peek_char() == "#" then
+				self:to_eol()
+			end
 			if char == "-" then
 				return self:create_token("DASH", char, row, col)
 			elseif char == ":" then
@@ -508,7 +519,10 @@ function Lexer:token()
 					break
 				elseif self.flow_level > 0 and self:peek_char() and match("{}[]:,", self:peek_char()) then
 					break
-				elseif self:peek_char() == ":" and (self:peek_char(2) == " " or self:peek_char(2) == "\n") then
+				elseif
+					self:peek_char() == ":"
+					and (self:peek_char(2) == " " or self:peek_char(2) == "\n" or self:peek_char(2) == "\t")
+				then
 					break
 				end
 				table.insert(chars, self:next_char())
@@ -653,6 +667,19 @@ function Lexer:html()
 					.. #token.val
 					.. "</span>"
 			)
+		elseif token.kind == "QUOTED" then
+			table.insert(
+				body,
+				"<span class='BOX "
+					.. token.kind
+					.. "'><span class='POS'>["
+					.. token.row
+					.. ":"
+					.. token.col
+					.. "] </span><pre>"
+					.. table.concat(token.val, "\n")
+					.. "</pre></span>"
+			)
 		else
 			table.insert(
 				body,
@@ -753,11 +780,21 @@ function Parser:quoted(token)
 	local res
 	local last_nl = false
 	for i, line in ipairs(token.val) do
-		if token.type == '"' then
-			line = string.gsub(line, "\\n", "\n")
-		end
-		if trim(line) == "" then
-			table.insert(res, "\n")
+		-- 	line = 		-- end
+		if token.type == '"' and string.match(line, "\\$") then
+			table.insert(res, ltrim(string.sub(line, 1, #line - 1)))
+		elseif token.type == '"' and string.match(line, "^( +\\)(.*)$") then
+			local content = string.match(line, "^ +\\(.*)$")
+			table.insert(res, content)
+		elseif trim(line) == "" then
+			if not res then
+				res = {}
+				table.insert(res, " ")
+			elseif i == #token.val then
+				table.insert(res, " ")
+			else
+				table.insert(res, "\n")
+			end
 			last_nl = true
 		elseif res then
 			if not last_nl then
@@ -775,7 +812,11 @@ function Parser:quoted(token)
 			table.insert(res, rtrim(line))
 		end
 	end
-	return table.concat(res, "")
+	if token.type == '"' then
+		return string.gsub(table.concat(res, ""), "\\n", "\n")
+	else
+		return table.concat(res, "")
+	end
 end
 
 function Parser:folded(token, indent, folded)
@@ -1021,11 +1062,15 @@ function Parser:flow_map(indent)
 			table.insert(tokens, { kind = "VAL", val = res, type = token.type })
 		elseif token.kind == "VAL" then
 			local val = self.lexer:next()
-			table.insert(tokens, { kind = "VAL", val = val.val, anchor = table.remove(self.anchor) })
+			table.insert(tokens, { kind = "VAL", val = val.val, tag = self.tagref, anchor = table.remove(self.anchor) })
+			self.tagref = nil
 		elseif token.kind == "NL" then
 			self.lexer:next()
 		elseif token.kind == "ANCHOR" then
 			table.insert(self.anchor, self.lexer:next())
+		elseif token.kind == "TAGREF" then
+			self.tagref = self.lexer:next()
+			self.tagref.val = self:parse_tag(self.tagref.val)
 		else
 			error("unknown flow_map kind: " .. token.kind)
 		end
@@ -1075,6 +1120,9 @@ function Parser:flow_seq(indent)
 			assert(val.kind == "VAL", "expected VAL  but is: " .. val.kind)
 			table.insert(tokens, { kind = "VAL", val = val.val })
 			table.insert(tokens, { kind = "-MAP" })
+		elseif token.kind == "TAGREF" then
+			self.tagref = self.lexer:next()
+			self.tagref.val = self:parse_tag(self.tagref.val)
 		elseif token.kind == "VAL" then
 			local val = self.lexer:next()
 			if self.lexer:peek().kind == "FLOW_COLON" then
@@ -1087,7 +1135,28 @@ function Parser:flow_seq(indent)
 				table.insert(tokens, { kind = "VAL", val = val.val })
 				table.insert(tokens, { kind = "-MAP" })
 			else
-				table.insert(tokens, { kind = "VAL", val = val.val, anchor = table.remove(self.anchor) })
+				local value = {}
+				table.insert(value, val.val)
+				while self.lexer:peek() do
+					if self.lexer:peek().kind == "VAL" then
+						table.insert(value, trim(self.lexer:next().val))
+					elseif self.lexer:peek().kind == "NL" then
+						if self.lexer:peek(2).kind == "SEP" and self.lexer:peek(3).kind == "VAL" then
+							self.lexer:next()
+							self.lexer:next()
+						else
+							break
+						end
+					else
+						break
+					end
+				end
+				table.insert(tokens, {
+					kind = "VAL",
+					val = trim(table.concat(value, " ")),
+					tag = self.tagref,
+					anchor = table.remove(self.anchor),
+				})
 			end
 		elseif token.kind == "NL" then
 			self.lexer:next()
@@ -1441,14 +1510,18 @@ end
 
 function Parser:parse()
 	table.insert(self.tokens, { kind = "+STR" })
-	local token = self.lexer:peek()
 	--skip trailing empty lines
-	while token.kind == "NL" do
+	while
+		self.lexer:peek()
+		and self.lexer:peek().kind == "SEP"
+		and self.lexer:peek(2)
+		and self.lexer:peek(2).kind == "NL"
+	do
 		self.lexer:next()
-		token = self.lexer:peek()
+		self.lexer:next()
 	end
-	assert(token.kind == "SEP")
-	local indent = #token.val
+	local token = self.lexer:peek()
+	local indent = (token and #token.val or 0)
 	self.lexer:next()
 	token = self.lexer:peek()
 	local res = 1
@@ -1502,8 +1575,8 @@ function Parser:__tostring()
 				string.format(
 					"=%s %s%s%s%s",
 					t.kind,
-					(t.tag and t.tag.val .. " " or ""),
 					(t.anchor and "&" .. t.anchor.val .. " " or ""),
+					(t.tag and t.tag.val .. " " or ""),
 					(t.type and t.type or ":"),
 					escape(self:value((t.val or "")))
 				)
