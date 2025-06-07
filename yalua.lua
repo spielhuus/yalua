@@ -318,7 +318,7 @@ function Lexer:folded()
 					self:next_char()
 					table.insert(lines, { indent = 0, val = "" })
 				end
-			elseif self:peek_sep() < final_indent then
+			elseif self:peek_char() and final_indent and self:peek_sep() < final_indent then
 				break
 			else
 				self:next_char()
@@ -376,7 +376,9 @@ function Lexer:token()
 						local uri = self:directive_tag_uri()
 						return { kind = "DIRECTIVE", type = "GLOBAL_TAG", val = uri, row = row, col = col }
 					elseif self:peek_char() == "!" then
-						error("second tag")
+						self:next_char()
+						local uri = self:directive_tag_uri()
+						return { kind = "DIRECTIVE", type = "SECOND_TAG", val = uri, row = row, col = col }
 					else
 						local tag_name = ""
 						while self:peek_char() and self:peek_char() ~= "!" do
@@ -667,7 +669,23 @@ function Lexer:html()
 					.. #token.val
 					.. "</span>"
 			)
-		elseif token.kind == "QUOTED" then
+		elseif token.kind == "LITERAL" then
+			print(to_string(token.lines))
+			table.insert(
+				body,
+				"<span class='BOX "
+					.. token.kind
+					.. "'><span class='POS'>["
+					.. token.row
+					.. ":"
+					.. token.col
+					.. "] </span><pre>"
+					.. token.val
+					.. "  "
+					.. to_string(token.lines)
+					.. "</pre></span>"
+			)
+		elseif token.kind == "QUOTED" or token.kind == "FOLDED" then
 			table.insert(
 				body,
 				"<span class='BOX "
@@ -1029,7 +1047,11 @@ function Parser:parse_tag(tag)
 		local name, uri = string.match(tag, "^!([%a%d]*)!([%%%a%d]*)")
 		return "<" .. self.named_tags[name] .. url_decode(uri) .. ">"
 	elseif string.match(tag, "^!![%a%d]*") then
-		return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
+		if self.second_tag then
+			return "<" .. trim(self.second_tag) .. string.sub(tag, 3) .. ">"
+		else
+			return "<" .. self.global_tag .. string.sub(tag, 3) .. ">"
+		end
 	elseif string.match(tag, "^![%a%d]*") then
 		if self.primary_tag then
 			return "<" .. self.primary_tag .. string.sub(tag, 2) .. ">"
@@ -1487,6 +1509,9 @@ function Parser:directive()
 		elseif token.type == "NAMED_TAG" then
 			token = self.lexer:next()
 			self.named_tags[token.name] = token.val
+		elseif token.type == "SECOND_TAG" then
+			token = self.lexer:next()
+			self.second_tag = token.val
 		elseif token.kind == "DIRECTIVE" then
 			self.lexer:next()
 			token = self.lexer:peek()
