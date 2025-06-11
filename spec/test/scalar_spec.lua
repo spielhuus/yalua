@@ -287,6 +287,143 @@ strip: >
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a literal multiline scalar with leading empty lines", function()
+		local doc = [[
+strip: >
+
+  text
+
+  
+  another line
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL >\ntext\n\nanother line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with no indentation", function()
+		local doc = [[
+--- >
+text
+# no comment
+another line
+]]
+		local expect = [[
++STR
++DOC ---
+=VAL >text # no comment another line\n
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with bigger empty line indentation", function()
+		local doc = [[
+--- 
+text: >
+  
+   
+  text
+  # no comment
+  another line
+]]
+		local result, mes = yalua.dump(doc)
+		assert.is.Nil(result)
+		assert.are.same(mes, "ERROR:5:2 block scalar with wrongly indented line after spaces only\n  text\n  ^")
+	end)
+
+	it("should lex a folded string with empty line in more indented", function()
+		local doc = [[
+--- 
+text: >
+  text
+  
+    * entry
+
+    * other
+    
+    * last
+  another line
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
+=VAL :text
+=VAL >text\n\n  * entry\n\n  * other\n  \n  * last\nanother line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with empty line in more indented and hint", function()
+		local doc = [[
+--- 
+text: >2
+    text
+  another line
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
+=VAL :text
+=VAL >  text\nanother line\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with empty line in more indented and hint from suite #subject", function()
+		local doc = [[
+---
+a: >2
+   more indented
+  regular
+b: >2
+
+
+   more indented
+  regular
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
+=VAL :a
+=VAL > more indented\nregular\n
+=VAL :b
+=VAL >\n\n more indented\nregular\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a literal multiline scalar with more indented lines", function()
 		local doc = [[
 strip: >

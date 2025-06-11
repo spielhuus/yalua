@@ -1170,6 +1170,17 @@ rbi:
 		assert.are.same(expect, result)
 	end)
 
+	it("should error on wrong indentation error in seq", function()
+		local doc = [[
+- - ok
+  - also ok
+ - wrong
+]]
+		local result, mes = yalua.dump(doc)
+		assert.is_nil(result)
+		assert.are.same("ERROR:3:0 wrong indentation: should be 0 but is 1\n - wrong\n^", mes)
+	end)
+
 	it("should error on wrong indentation error", function()
 		local doc = [[
 key:

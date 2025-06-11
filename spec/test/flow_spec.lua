@@ -534,7 +534,7 @@ is happy, dad too]
 		assert.are.same(expect, result)
 	end)
 
-	it("it should lex a map with tags #subject", function()
+	it("it should lex a map with tags", function()
 		local doc = [[
 key: {!!str string: value,
  !!str foo: !!str bar}
