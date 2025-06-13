@@ -373,6 +373,73 @@ text: >
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a folded string with empty line indentation spaces", function()
+		local doc = [[
+--- 
+- >
+ 
+  
+  # comment
+]]
+		local expect = [[
++STR
++DOC ---
++SEQ
+=VAL >\n\n# comment\n
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with empty line indentation spaces and tab #xxx", function()
+		local doc = [[
+--- 
+- >
+ 	
+ detected
+]]
+		local expect = [[
++STR
++DOC ---
++SEQ
+=VAL >\t\ndetected\n
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should lex a folded string with empty line in more indented with tab", function()
+		local doc = [[
+--- 
+text: >
+  text
+  	* entry
+   * other
+   * last
+]]
+		local expect = [[
++STR
++DOC ---
++MAP
+=VAL :text
+=VAL >text\n\t* entry\n * other\n * last\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a folded string with empty line in more indented and hint", function()
 		local doc = [[
 --- 

@@ -270,21 +270,32 @@ end
 
 function Lexer:sep()
 	local row, col = self.row, self.col
+
+	local indent = 1
+	while self:peek_char(indent) and (self:peek_char(indent) == " " or self:peek_char(indent) == "\t") do
+		indent = indent + 1
+	end
+
 	local sep = { self:next_char() }
 	while self:peek_char() and self:peek_char() == " " do
 		-- TODO: here could be a comment
-		table.insert(sep, self:next_char())
+		if self:peek_char() == " " then
+			table.insert(sep, self:next_char())
+		end
 	end
+
 	if col == 0 then
 		self.indent = #sep
 	end
-	return self:create_token("SEP", table.concat(sep, ""), row, col)
+	return { kind = "SEP", val = table.concat(sep, ""), indent = indent - 1, row = row, row = col }
 end
 
+---checks if the next char after a linebreak is an empty line
+---@return boolean
 function Lexer:is_empty_line()
 	local index = 2
 	while self:peek_char(index) do
-		if self:peek_char(index) == " " then
+		if self:peek_char(index) == " " or self:peek_char() == "\t" then
 			index = index + 1
 		elseif self:peek_char(index) == "\n" then
 			return true
@@ -303,35 +314,49 @@ function Lexer:folded(hint)
 	assert(self:peek_char() == "\n")
 	-- read the first empty line
 	if self:is_empty_line() then
-		self:next_char()
+		self:next_char() -- skip NL
 		if self:peek_char() == " " then
 			local sep = self:sep()
 			last_indent = #sep.val
-			table.insert(lines, { indent = #sep.val, val = "" })
+			table.insert(lines, { indent = #sep.val, val = sep.val, empty = true })
 		else
-			table.insert(lines, { indent = 0, val = "" })
+			table.insert(lines, { indent = 0, val = "", empty = true })
 		end
 	else
 		self:next_char()
 	end
 	while self:peek_char() do
+		print(
+			"folded char:"
+				.. self.row
+				.. ":"
+				.. self.col
+				.. " "
+				.. (final_indent or "no final_indent")
+				.. " '"
+				.. escape(self:peek_char())
+				.. "'"
+		)
 		if self:peek_char() == " " then
 			local sep = self:sep()
-			last_indent = #sep.val
+			print("SEP" .. to_string(sep))
+			last_indent = sep.indent -- TODO: #sep.val
 		elseif self:peek_char() == "\n" then
 			if self:is_empty_line() then
 				if self:peek_char(2) == " " then
-					self:next_char()
+					self:next_char() -- skip NL
 					local sep = self:sep()
+					print(to_string(sep))
 					empty_indent = #sep.val
-					table.insert(lines, { indent = #sep.val, val = "" })
+					table.insert(lines, { indent = sep.indent, val = sep.val, empty = true })
 					assert(self:peek_char() == "\n")
 				else
 					assert(self:peek_char() == "\n")
 					self:next_char()
-					table.insert(lines, { indent = 0, val = "" })
+					table.insert(lines, { indent = 0, val = "", empty = true })
 				end
 			elseif self:peek_char() and final_indent and self:peek_sep() < final_indent then
+				print("break")
 				break
 			else
 				self:next_char()
@@ -835,7 +860,6 @@ function Parser:quoted(token)
 	local res
 	local last_nl = false
 	for i, line in ipairs(token.val) do
-		-- 	line = 		-- end
 		if token.type == '"' and string.match(line, "\\$") then
 			table.insert(res, ltrim(string.sub(line, 1, #line - 1)))
 		elseif token.type == '"' and string.match(line, "^( +\\)(.*)$") then
@@ -921,6 +945,14 @@ function Parser:folded(token, indent, folded)
 	return table.concat(lines, "")
 end
 
+function Parser:leading_tabs(str)
+	local i = 1
+	while string.sub(str, i, i) == "\t" do
+		i = i + 1
+	end
+	return i - 1
+end
+
 function Parser:literal(token)
 	print("literal: " .. to_string(token))
 	local lines
@@ -934,46 +966,87 @@ function Parser:literal(token)
 	local last_empty = false
 	local last_indent = token.lines[1].indent -- token.indent
 	local is_more_indented = false
+	local first_content_line = true
 	for i, line in ipairs(token.lines) do
-		print("line: " .. last_indent .. " '" .. line.val .. "'")
+		print("line: " .. last_indent .. " '" .. to_string(line.val) .. "'")
 		if lines then
-			if line.val == "" and token.kind == "FOLDED" then
+			if line.empty and token.kind == "FOLDED" then
 				if last_indent > indent then
 					table.insert(lines, "\n")
 				end
-				table.insert(lines, string.rep(" ", line.indent - indent) .. "\n")
+				print("indent: " .. line.indent)
+				table.insert(lines, string.sub(line.val, indent + 1) .. "\n")
 				last_empty = true
-				last_indent = indent
+				last_indent = line.indent
 			elseif line.indent > indent and token.kind == "FOLDED" then
-				print("greater: " .. tostring(is_more_indented) .. " " .. tostring(last_empty) .. " " .. line.val)
-				if is_more_indented and last_empty then
-					table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
+				print(
+					"greater: "
+						.. tostring(is_more_indented)
+						.. " "
+						.. tostring(last_empty)
+						.. ", first_content_line:  "
+						.. tostring(first_content_line)
+						.. " "
+						.. line.val
+				)
+				if not first_content_line and not (last_empty and is_more_indented) then
+					if string.sub(line.val, 1, 1) == "\t" then
+						table.insert(lines, "\n" .. line.val)
+					else
+						-- TODO: use begin_tab
+						table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
+					end
 				else
-					table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
+					table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
 				end
+				first_content_line = false
 				last_empty = false
 				last_indent = line.indent
 				is_more_indented = true
 			elseif last_empty and token.kind == "FOLDED" then
 				table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
+				first_content_line = false
 				is_more_indented = false
 				last_empty = false
 			else
-				print("else: " .. tostring(is_more_indented) .. " " .. line.val)
+				print(
+					"else: "
+						.. last_indent
+						.. ":"
+						.. indent
+						.. ", empty:  "
+						.. (line.empty and "yes" or "no")
+						.. ", more indented: "
+						.. tostring(is_more_indented)
+						.. " "
+						.. to_string(line.val)
+				)
 				if last_indent > indent then
-					table.insert(lines, "\n" .. string.rep(" ", line.indent - indent) .. line.val)
-					last_indent = indent
+					print("else more indented: " .. line.indent .. ":" .. indent)
+					table.insert(
+						lines,
+						"\n" .. string.rep(" ", line.indent - indent - self:leading_tabs(line.val)) .. line.val
+					)
+					first_content_line = false
+					last_indent = line.indent
+				elseif line.empty then
+					table.insert(lines, sep .. string.sub(line.val, indent + 1))
 				else
-					table.insert(lines, sep .. string.rep(" ", line.indent - indent) .. line.val)
+					table.insert(
+						lines,
+						sep .. string.rep(" ", line.indent - indent - self:leading_tabs(line.val)) .. line.val
+					)
+					first_content_line = false
 				end
 			end
 		else
 			lines = {}
-			if line.val == "" then
+			if line.empty then
 				table.insert(lines, "\n")
 				last_empty = true
 			else
 				table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
+				first_content_line = false
 			end
 		end
 	end
