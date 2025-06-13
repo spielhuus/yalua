@@ -110,6 +110,8 @@ function Lexer:new(str)
 	o.tokens = {}
 	o.t_index = 0
 	o.flow_level = 0
+	o.indent = 0
+	o.state = "START"
 	return o
 end
 
@@ -261,11 +263,19 @@ function Lexer:directive_tag_uri()
 end
 
 function Lexer:peek_sep()
-	local index = 2
+	local index
+	local start_index
+	if self:peek_char() == "\n" then
+		index = 2
+		start_index = 2
+	else
+		index = 1
+		start_index = 1
+	end
 	while self:peek_char(index) and self:peek_char(index) == " " do
 		index = index + 1
 	end
-	return index - 2
+	return index - start_index
 end
 
 function Lexer:sep()
@@ -284,18 +294,23 @@ function Lexer:sep()
 		end
 	end
 
-	if col == 0 then
-		self.indent = #sep
-	end
-	return { kind = "SEP", val = table.concat(sep, ""), indent = indent - 1, row = row, row = col }
+	-- if col == 0 then
+	-- 	self.indent = #sep
+	-- end
+	return { kind = "SEP", val = table.concat(sep, ""), indent = indent - 1, row = row, col = col }
 end
 
 ---checks if the next char after a linebreak is an empty line
 ---@return boolean
 function Lexer:is_empty_line()
-	local index = 2
+	local index
+	if self:peek_char() == "\n" then
+		index = 2
+	else
+		index = 1
+	end
 	while self:peek_char(index) do
-		if self:peek_char(index) == " " or self:peek_char() == "\t" then
+		if self:peek_char(index) == " " or self:peek_char(index) == "\t" then
 			index = index + 1
 		elseif self:peek_char(index) == "\n" then
 			return true
@@ -309,6 +324,7 @@ end
 function Lexer:folded(hint)
 	local lines = {}
 	local last_indent = 0
+	local last_indent_no_tab = 0
 	local final_indent = hint
 	local empty_indent = 0
 	assert(self:peek_char() == "\n")
@@ -316,9 +332,9 @@ function Lexer:folded(hint)
 	if self:is_empty_line() then
 		self:next_char() -- skip NL
 		if self:peek_char() == " " then
+			last_indent = self:peek_sep() -- #sep.val
 			local sep = self:sep()
-			last_indent = #sep.val
-			table.insert(lines, { indent = #sep.val, val = sep.val, empty = true })
+			table.insert(lines, { indent = #sep.val, val = sep.val .. self:to_eol(), empty = true })
 		else
 			table.insert(lines, { indent = 0, val = "", empty = true })
 		end
@@ -326,27 +342,15 @@ function Lexer:folded(hint)
 		self:next_char()
 	end
 	while self:peek_char() do
-		print(
-			"folded char:"
-				.. self.row
-				.. ":"
-				.. self.col
-				.. " "
-				.. (final_indent or "no final_indent")
-				.. " '"
-				.. escape(self:peek_char())
-				.. "'"
-		)
 		if self:peek_char() == " " then
+			last_indent_no_tab = self:peek_sep()
 			local sep = self:sep()
-			print("SEP" .. to_string(sep))
 			last_indent = sep.indent -- TODO: #sep.val
 		elseif self:peek_char() == "\n" then
 			if self:is_empty_line() then
 				if self:peek_char(2) == " " then
 					self:next_char() -- skip NL
 					local sep = self:sep()
-					print(to_string(sep))
 					empty_indent = #sep.val
 					table.insert(lines, { indent = sep.indent, val = sep.val, empty = true })
 					assert(self:peek_char() == "\n")
@@ -355,8 +359,13 @@ function Lexer:folded(hint)
 					self:next_char()
 					table.insert(lines, { indent = 0, val = "", empty = true })
 				end
+			elseif
+				self:peek_char()
+				and self:peek_sep() <= self.indent
+				and (self.state == "DASH" or self.state == "COLON")
+			then
+				break
 			elseif self:peek_char() and final_indent and self:peek_sep() < final_indent then
-				print("break")
 				break
 			else
 				self:next_char()
@@ -371,6 +380,10 @@ function Lexer:folded(hint)
 			table.insert(lines, { indent = last_indent, val = self:to_eol() })
 		end
 	end
+	if not final_indent then
+		final_indent = self.indent
+	end
+
 	return final_indent, lines
 end
 
@@ -405,6 +418,7 @@ function Lexer:token()
 		local char = self:peek_char()
 		if char == "%" then
 			local row, col = self.row, self.col
+
 			self:next_char()
 			local name = self:to_sep()
 			if name == "YAML" then
@@ -522,8 +536,10 @@ function Lexer:token()
 				self:to_eol()
 			end
 			if char == "-" then
+				self.state = "DASH"
 				return self:create_token("DASH", char, row, col)
 			elseif char == ":" then
+				self.state = "COLON"
 				return self:create_token("COLON", char, row, col)
 			end
 		elseif self:peek_char() == "!" then
@@ -548,6 +564,7 @@ function Lexer:token()
 				self:next_char()
 			end
 		elseif char == " " then
+			self.state = "SEP"
 			-- TODO: use sep function
 			local row, col = self.row, self.col
 			local sep = { self:next_char() }
@@ -557,10 +574,15 @@ function Lexer:token()
 			end
 			if col == 0 then
 				self.indent = #sep
+			else
+				self.indent = self.indent + #sep
 			end
 			return self:create_token("SEP", table.concat(sep, ""), row, col)
 		elseif char == "\n" then
 			local row, col = self.row, self.col
+			if self.state ~= "DASH" and self.state ~= "COLON" then
+				self.state = 0
+			end
 			return self:create_token("NL", self:next_char(), row, col)
 		elseif self.col == 0 and self:peek_char() == "#" then
 			self:to_eol()
@@ -585,6 +607,7 @@ function Lexer:token()
 				end
 				table.insert(chars, self:next_char())
 			end
+			self.state = "VAL"
 			return self:create_token("VAL", rtrim(table.concat(chars, "")), row, col)
 		end
 	end
@@ -954,7 +977,6 @@ function Parser:leading_tabs(str)
 end
 
 function Parser:literal(token)
-	print("literal: " .. to_string(token))
 	local lines
 	local sep
 	if token.kind == "LITERAL" then
@@ -964,31 +986,19 @@ function Parser:literal(token)
 	end
 	local indent = (token.hint and token.hint or token.indent)
 	local last_empty = false
-	local last_indent = token.lines[1].indent -- token.indent
+	local last_indent = (token.lines[1] and token.lines[1].indent or 0)
 	local is_more_indented = false
 	local first_content_line = true
-	for i, line in ipairs(token.lines) do
-		print("line: " .. last_indent .. " '" .. to_string(line.val) .. "'")
+	for _, line in ipairs(token.lines) do
 		if lines then
 			if line.empty and token.kind == "FOLDED" then
 				if last_indent > indent then
 					table.insert(lines, "\n")
 				end
-				print("indent: " .. line.indent)
 				table.insert(lines, string.sub(line.val, indent + 1) .. "\n")
 				last_empty = true
 				last_indent = line.indent
 			elseif line.indent > indent and token.kind == "FOLDED" then
-				print(
-					"greater: "
-						.. tostring(is_more_indented)
-						.. " "
-						.. tostring(last_empty)
-						.. ", first_content_line:  "
-						.. tostring(first_content_line)
-						.. " "
-						.. line.val
-				)
 				if not first_content_line and not (last_empty and is_more_indented) then
 					if string.sub(line.val, 1, 1) == "\t" then
 						table.insert(lines, "\n" .. line.val)
@@ -1009,20 +1019,7 @@ function Parser:literal(token)
 				is_more_indented = false
 				last_empty = false
 			else
-				print(
-					"else: "
-						.. last_indent
-						.. ":"
-						.. indent
-						.. ", empty:  "
-						.. (line.empty and "yes" or "no")
-						.. ", more indented: "
-						.. tostring(is_more_indented)
-						.. " "
-						.. to_string(line.val)
-				)
 				if last_indent > indent then
-					print("else more indented: " .. line.indent .. ":" .. indent)
 					table.insert(
 						lines,
 						"\n" .. string.rep(" ", line.indent - indent - self:leading_tabs(line.val)) .. line.val
@@ -1042,7 +1039,7 @@ function Parser:literal(token)
 		else
 			lines = {}
 			if line.empty then
-				table.insert(lines, "\n")
+				table.insert(lines, string.sub(line.val, line.indent + 1) .. "\n")
 				last_empty = true
 			else
 				table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
@@ -1057,11 +1054,22 @@ function Parser:literal(token)
 		end
 	end
 	-- collect the result
-	local result = table.concat(lines, "")
-	if token.chomping == "KEEP" then
-		result = result .. "\n"
-	elseif token.chomping ~= "STRIP" and string.sub(result, #result) ~= "\n" then
-		result = result .. "\n"
+	local result
+	-- corner case when the folded contnet is an empty line
+	if not lines or (#lines == 0) then
+		if token.chomping == "KEEP" then
+			result = "\n"
+		else
+			result = ""
+		end
+	else
+		-- normal case
+		result = table.concat(lines, "")
+		if token.chomping == "KEEP" then
+			result = result .. "\n"
+		elseif token.chomping ~= "STRIP" and string.sub(result, #result) ~= "\n" then
+			result = result .. "\n"
+		end
 	end
 	-- return result
 	return result

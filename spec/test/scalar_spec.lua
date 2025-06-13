@@ -416,6 +416,32 @@ text: >
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a folded string with empty content", function()
+		local doc = [[
+strip: >-
+
+clip: >
+
+keep: |+
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :strip
+=VAL >
+=VAL :clip
+=VAL >
+=VAL :keep
+=VAL |\n
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 	it("should lex a folded string with empty line in more indented with tab", function()
 		local doc = [[
 --- 
