@@ -322,13 +322,18 @@ function Lexer:is_empty_line()
 end
 
 function Lexer:folded(hint)
-	print("lexer:folded " .. self.indent .. " " .. (hint or 0))
 	local lines = {}
 	local last_indent = 0
 	local last_indent_no_tab = 0
 	local final_indent = (hint and (self.indent + hint) or nil)
 	local empty_indent = 0
-	assert(self:peek_char() == "\n")
+	if self:peek_char() == nil then
+		return self.indent, lines
+	end
+	assert(
+		self:peek_char() == "\n",
+		"folded: first char is: '" .. (self:peek_char() and self:peek_char() or "eof") .. "'"
+	)
 	-- read the first empty line
 	if self:is_empty_line() then
 		self:next_char() -- skip NL
@@ -408,6 +413,9 @@ function Lexer:folding_attrs(type)
 		else
 			return nil, self:error("unknown literal attribute")
 		end
+	end
+	if self:peek_char() ~= "\n" then
+		return nil, self:error("block scalar no linebreak found")
 	end
 	return token
 end
@@ -576,10 +584,8 @@ function Lexer:token()
 				table.insert(sep, self:next_char())
 			end
 			if col == 0 then
-				print("SEP indent: " .. #sep)
 				self.indent = #sep
 			else
-				print("SEP following indent: " .. self.indent + #sep)
 				self.indent = self.indent + #sep
 			end
 			return self:create_token("SEP", table.concat(sep, ""), row, col)
@@ -983,7 +989,6 @@ function Parser:leading_tabs(str)
 end
 
 function Parser:literal(token)
-	print(to_string(token))
 	local lines
 	local sep
 	if token.kind == "LITERAL" then
@@ -992,7 +997,6 @@ function Parser:literal(token)
 		sep = " "
 	end
 	local indent = (token.hint and token.hint or token.indent)
-	print("indent: " .. indent)
 	local last_empty = false
 	local last_indent = (token.lines[1] and token.lines[1].indent or 0)
 	local is_more_indented = false
@@ -1059,7 +1063,7 @@ function Parser:literal(token)
 		end
 	end
 	-- remove trailing newlines
-	if token.chomping ~= "KEEP" then
+	if lines and token.chomping ~= "KEEP" then
 		while lines[#lines] == "\n" do
 			table.remove(lines, #lines)
 		end
