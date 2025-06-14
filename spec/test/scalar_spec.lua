@@ -395,7 +395,7 @@ text: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a folded string with empty line indentation spaces and tab #xxx", function()
+	it("should lex a folded string with empty line indentation spaces and tab", function()
 		local doc = [[
 --- 
 - >
@@ -416,6 +416,60 @@ text: >
 		assert.are.same(expect, result)
 	end)
 
+	it("should lex a folded string in a sequence and map with hint #subject", function()
+		local doc = [[
+--- 
+- foo: |2
+    first value
+  bar: >
+    second_value
+]]
+		local expect = [[
++STR
++DOC ---
++SEQ
++MAP
+=VAL :foo
+=VAL |first value\n
+=VAL :bar
+=VAL >second_value\n
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
+	it("should error with wrong indentation in map", function()
+		local doc = [[
+--- 
+- foo: |
+ first value
+  bar: >
+    second_value
+]]
+		local expect = [[
++STR
++DOC ---
++SEQ
++MAP
+=VAL :foo
+=VAL |first value\n
+=VAL :bar
+=VAL >second_value\n
+-MAP
+-SEQ
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should lex a folded string with empty content", function()
 		local doc = [[
 strip: >-
@@ -423,6 +477,7 @@ strip: >-
 clip: >
 
 keep: |+
+
 ]]
 		local expect = [[
 +STR
@@ -488,7 +543,7 @@ text: >2
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a folded string with empty line in more indented and hint from suite #subject", function()
+	it("should lex a folded string with empty line in more indented and hint from suite", function()
 		local doc = [[
 ---
 a: >2

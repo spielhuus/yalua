@@ -322,10 +322,11 @@ function Lexer:is_empty_line()
 end
 
 function Lexer:folded(hint)
+	print("lexer:folded " .. self.indent .. " " .. (hint or 0))
 	local lines = {}
 	local last_indent = 0
 	local last_indent_no_tab = 0
-	local final_indent = hint
+	local final_indent = (hint and (self.indent + hint) or nil)
 	local empty_indent = 0
 	assert(self:peek_char() == "\n")
 	-- read the first empty line
@@ -537,9 +538,11 @@ function Lexer:token()
 			end
 			if char == "-" then
 				self.state = "DASH"
+				self.indent = (self.col == 2 and 0 or self.col)
 				return self:create_token("DASH", char, row, col)
 			elseif char == ":" then
 				self.state = "COLON"
+				self.indent = self.tokens[#self.tokens].col
 				return self:create_token("COLON", char, row, col)
 			end
 		elseif self:peek_char() == "!" then
@@ -573,8 +576,10 @@ function Lexer:token()
 				table.insert(sep, self:next_char())
 			end
 			if col == 0 then
+				print("SEP indent: " .. #sep)
 				self.indent = #sep
 			else
+				print("SEP following indent: " .. self.indent + #sep)
 				self.indent = self.indent + #sep
 			end
 			return self:create_token("SEP", table.concat(sep, ""), row, col)
@@ -869,7 +874,8 @@ end
 
 function Parser:push(target, tokens)
 	if not tokens then
-		table.insert(target, { kind = "VAL", val = "" })
+		table.insert(target, { kind = "VAL", val = "", tag = self.tagref, anchor = table.remove(self.anchor) })
+		self.tagref = nil
 	elseif tokens[1] and type(tokens[1]) == "table" then
 		for _, t in ipairs(tokens) do
 			table.insert(target, t)
@@ -977,6 +983,7 @@ function Parser:leading_tabs(str)
 end
 
 function Parser:literal(token)
+	print(to_string(token))
 	local lines
 	local sep
 	if token.kind == "LITERAL" then
@@ -985,6 +992,7 @@ function Parser:literal(token)
 		sep = " "
 	end
 	local indent = (token.hint and token.hint or token.indent)
+	print("indent: " .. indent)
 	local last_empty = false
 	local last_indent = (token.lines[1] and token.lines[1].indent or 0)
 	local is_more_indented = false
@@ -1028,6 +1036,9 @@ function Parser:literal(token)
 					last_indent = line.indent
 				elseif line.empty then
 					table.insert(lines, sep .. string.sub(line.val, indent + 1))
+				elseif first_content_line then
+					table.insert(lines, line.val)
+					first_content_line = false
 				else
 					table.insert(
 						lines,
@@ -1042,7 +1053,7 @@ function Parser:literal(token)
 				table.insert(lines, string.sub(line.val, line.indent + 1) .. "\n")
 				last_empty = true
 			else
-				table.insert(lines, string.rep(" ", line.indent - indent) .. line.val)
+				table.insert(lines, string.rep(" ", line.indent - token.indent) .. line.val)
 				first_content_line = false
 			end
 		end
@@ -1065,7 +1076,7 @@ function Parser:literal(token)
 	else
 		-- normal case
 		result = table.concat(lines, "")
-		if token.chomping == "KEEP" then
+		if token.chomping == "KEEP" and not first_content_line then
 			result = result .. "\n"
 		elseif token.chomping ~= "STRIP" and string.sub(result, #result) ~= "\n" then
 			result = result .. "\n"
@@ -1084,7 +1095,7 @@ function Parser:block_node(indent, folded)
 	while token do
 		if token.kind == "VAL" then
 			-- self.anchor = nil
-			if self.lexer:peek().kind == "COLON" then
+			if self.lexer:peek() and self.lexer:peek().kind == "COLON" then
 				if self.anchor[#self.anchor] and self.anchor[#self.anchor].row == token.row then
 					token.anchor = table.remove(self.anchor)
 				end
@@ -1098,7 +1109,9 @@ function Parser:block_node(indent, folded)
 			end
 		elseif token.kind == "QUOTED" then
 			local res = self:quoted(token)
-			local val = { kind = "VAL", val = res, tag = self.tagref, type = token.type }
+			local val =
+				{ kind = "VAL", val = res, tag = self.tagref, type = token.type, anchor = table.remove(self.anchor) }
+			self.tagref = nil
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
 				self.lexer:next()
 			end
@@ -1164,8 +1177,12 @@ function Parser:block_node(indent, folded)
 			return self:map(indent, key, tagref)
 		elseif token.kind == "NL" then
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
-				local next_indent = #self.lexer:next().val
-				assert(next_indent == indent, "found indent " .. next_indent .. " expected " .. indent)
+				local sep = self.lexer:next()
+				local next_indent = #sep.val
+				-- assert(
+				-- 	next_indent == indent,
+				-- 	self.lexer:error("found indent " .. next_indent .. " expected " .. indent, sep)
+				-- )
 			end
 		else
 			error("unknown item: " .. token.kind)
@@ -1402,6 +1419,7 @@ function Parser:sequence(indent)
 				break
 			end
 			self.lexer:next()
+			self.indent = token.indent
 		elseif token.kind == "NL" then
 			self.lexer:next()
 			if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
@@ -1421,10 +1439,12 @@ function Parser:sequence(indent)
 			end
 			if
 				self.lexer:peek().kind == "NL"
+				and self.lexer:peek(2)
 				and self.lexer:peek(2).kind == "SEP"
 				and #self.lexer:peek(2).val == indent
 			then
-				table.insert(tokens, { kind = "VAL", val = "" })
+				table.insert(tokens, { kind = "VAL", val = "", tag = self.tagref })
+				self.tagref = nil
 			elseif self.lexer:peek() and self.lexer:peek().kind == "DASH" then
 				local child, mes = self:sequence(self.lexer:peek().col)
 				if not child then
@@ -1460,7 +1480,8 @@ function Parser:sequence(indent)
 			and self.lexer:peek(3).kind == "SEP"
 			and #self.lexer:peek(3).val == indent
 		then
-			table.insert(tokens, { kind = "VAL", val = "", anchor = self.lexer:next() })
+			table.insert(tokens, { kind = "VAL", val = "", tag = self.tagref, anchor = self.lexer:next() })
+			self.tagref = nil
 		else
 			local val = self:block_node(token.col, true)
 			self:push(tokens, val)
