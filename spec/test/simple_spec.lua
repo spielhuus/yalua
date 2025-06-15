@@ -260,6 +260,28 @@ avg:
 		assert.are.same(expect, result)
 	end)
 
+	it("should map an url", function()
+		local doc = [[
+foo: bar
+baz: http://url.com
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :foo
+=VAL :bar
+=VAL :baz
+=VAL :http://url.com
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
+
 	it("should map and seq with same indent", function()
 		local doc = [[
 american:

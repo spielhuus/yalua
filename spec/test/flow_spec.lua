@@ -558,4 +558,29 @@ key: {!!str string: value,
 		assert(result)
 		assert.are.same(expect, result)
 	end)
+
+	it("it should lex a map with url", function()
+		local doc = [[
+key: {!!str string: value,
+ !!str foo: http://www.url.com }
+]]
+		local expect = [[
++STR
++DOC
++MAP
+=VAL :key
++MAP {}
+=VAL <tag:yaml.org,2002:str> :string
+=VAL :value
+=VAL <tag:yaml.org,2002:str> :foo
+=VAL :http://www.url.com
+-MAP
+-MAP
+-DOC
+-STR
+]]
+		local result = yalua.dump(doc)
+		assert(result)
+		assert.are.same(expect, result)
+	end)
 end)
