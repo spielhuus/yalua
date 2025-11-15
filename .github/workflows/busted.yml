@@ -1,0 +1,49 @@
+---
+name: busted test
+
+on: [ push, pull_request ]
+
+jobs:
+  busted:
+    strategy:
+      #fail-fast: false
+      matrix:
+        luaVersion: [ "5.1" ] # "5.4", "5.3", "5.2", "5.1" ] #, "luajit-openresty" ]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup ‘lua’
+        uses: leafo/gh-actions-lua@v11
+        with:
+          luaVersion: ${{ matrix.luaVersion }}
+
+      - name: Setup ‘luarocks’
+        uses: leafo/gh-actions-luarocks@v5
+
+
+      - name: Pull Yaml test suite
+        run: git clone https://github.com/yaml/yaml-test-suite.git yaml-test-suite && make -C yaml-test-suite data
+
+      # - name: Setup dependencies
+      #   run: |
+      #     luarocks install penlight ${{ matrix.penlightVersion }}
+      #     luarocks install moonscript
+      #     luarocks install luacov
+      #     luarocks install --deps-only busted-scm-1.rockspec
+
+      # - name: Build ‘busted’ (bootstrap)
+      #   run: |
+      #     luarocks make
+
+      - name: Run ‘busted’
+        # disable project-local path prefixes to force use of system installation
+        run: luarocks --lua-version ${{ matrix.luaVersion }} test spec/test/
+
+      # - name: Report test coverage
+      #   if: ${{ success() && github.repository == 'lunarmodules/busted' }}
+      #   continue-on-error: true
+      #   run: luacov-coveralls -i src -e .luarocks
+      #   env:
+      #     COVERALLS_REPO_TOKEN: ${{ github.token }}
