@@ -2,47 +2,47 @@ local assert = require("luassert")
 local yalua = require("yalua")
 
 describe("Test if the Lexer lexes", function()
-	it("should lex a stream start document", function()
-		local doc = [[
+  it("should lex a stream start document", function()
+    local doc = [[
 ---
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 =VAL :
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a simple value", function()
-		local doc = [[
+  it("should lex a simple value", function()
+    local doc = [[
 ---
 happy mom
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 =VAL :happy mom
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a simple list", function()
-		local doc = [[
+  it("should lex a simple list", function()
+    local doc = [[
 ---
 - happy mom
 - moms happy
 - when dad is happy
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -53,22 +53,22 @@ happy mom
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a list with newline", function()
-		local doc = [[
+  it("should lex a list with newline", function()
+    local doc = [[
 ---
-- 
+-
   happy mom
-- 
+-
   moms happy
-- 
+-
   when dad is happy
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -79,23 +79,62 @@ happy mom
 -DOC
 -STR
 ]]
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+  it("should lex string that looks like a seq", function()
+    local doc = [[
+---
+- happy mom
+  smile
+]]
+    local expect = [[
++STR
++DOC ---
++SEQ
+=VAL :happy mom smile
+-SEQ
+-DOC
+-STR
+]]
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested list", function()
-		local doc = [[
+  it("should lex string that looks like a seq", function()
+    local doc = [[
+---
+- happy mom
+ - smile
+]]
+    local expect = [[
++STR
++DOC ---
++SEQ
+=VAL :happy mom - smile
+-SEQ
+-DOC
+-STR
+]]
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
+
+  it("should lex a nested list", function()
+    local doc = [[
 ---
 - happy mom
 - - smile
   - drink
 - moms happy
-- 
+-
   when dad is happy
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -111,17 +150,17 @@ happy mom
 -STR
 ]]
 
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex map", function()
-		local doc = [[
+  it("should lex map", function()
+    local doc = [[
 value: key
 foo: bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -133,17 +172,17 @@ foo: bar
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex map with tab as separator", function()
-		local doc = [[
+  it("should lex map with tab as separator", function()
+    local doc = [[
 value: key
 foo:  bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -155,19 +194,19 @@ foo:  bar
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with newlines", function()
-		local doc = [[
-value: 
+  it("should lex a map with newlines", function()
+    local doc = [[
+value:
   key
 foo:
   bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -179,18 +218,18 @@ foo:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested map", function()
-		local doc = [[
+  it("should lex a nested map", function()
+    local doc = [[
 value: key
 foo:
   bar: baz
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -205,18 +244,18 @@ foo:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map with comments", function()
-		local doc = [[
+  it("should map with comments", function()
+    local doc = [[
 hr:  65    # Home runs
 avg: 0.278 # Batting average
 rbi: 147   # Runs Batted In
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -230,20 +269,20 @@ rbi: 147   # Runs Batted In
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map with multiple comments", function()
-		local doc = [[
+  it("should map with multiple comments", function()
+    local doc = [[
 foo: # Home runs
   bar
 avg:
   # Batting average
   147   # Runs Batted In
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -255,17 +294,17 @@ avg:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map an url", function()
-		local doc = [[
+  it("should map an url", function()
+    local doc = [[
 foo: bar
 baz: http://url.com
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -277,13 +316,13 @@ baz: http://url.com
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map and seq with same indent", function()
-		local doc = [[
+  it("should map and seq with same indent", function()
+    local doc = [[
 american:
 - Boston Red Sox
 - Detroit Tigers
@@ -293,7 +332,7 @@ national:
 - Chicago Cubs
 - Atlanta Braves
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -313,13 +352,13 @@ national:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map and seq with new lines", function()
-		local doc = [[
+  it("should map and seq with new lines", function()
+    local doc = [[
 -
   name: Mark McGwire
   hr:   65
@@ -329,7 +368,7 @@ national:
   hr:   63
   avg:  0.288
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +SEQ
@@ -353,20 +392,20 @@ national:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map with nested seq and literal", function()
-		local doc = [[
-name: 
-  - list list 
+  it("should map with nested seq and literal", function()
+    local doc = [[
+name:
+  - list list
   - |
     test
   - list 2
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -380,13 +419,13 @@ name:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should map with nested seq and map and literal", function()
-		local doc = [[
+  it("should map with nested seq and map and literal", function()
+    local doc = [[
 Stack:
 - file: TopClass.py
   line: 23
@@ -397,7 +436,7 @@ Stack:
   code: |-
     foo = bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -424,16 +463,16 @@ Stack:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse a scalar with quotes", function()
-		local doc = [[
+  it("should parse a scalar with quotes", function()
+    local doc = [[
 key: "this is a quoted string"
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -443,18 +482,18 @@ key: "this is a quoted string"
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse a multiline scalar with quotes", function()
-		local doc = [[
+  it("should parse a multiline scalar with quotes", function()
+    local doc = [[
 key: "this is a quoted string
  with multiple
  lines"
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -464,13 +503,13 @@ key: "this is a quoted string
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse a document with comments", function()
-		local doc = [[
+  it("should parse a document with comments", function()
+    local doc = [[
 ---
 hr: # 1998 hr ranking
 - Mark McGwire
@@ -480,7 +519,7 @@ rbi:
 - Sammy Sosa
 - Ken Griffey
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -498,13 +537,13 @@ rbi:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse a document with comments", function()
-		local doc = [[
+  it("should parse a document with comments", function()
+    local doc = [[
 ---
 hr: # 1998 hr ranking
 - Mark McGwire
@@ -514,7 +553,7 @@ rbi:
 - Sammy Sosa
 - Ken Griffey
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -532,13 +571,13 @@ rbi:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse multiple documents", function()
-		local doc = [[
+  it("should parse multiple documents", function()
+    local doc = [[
 ---
 hr: # 1998 hr ranking
 - Mark McGwire
@@ -550,7 +589,7 @@ rbi:
 - Sammy Sosa
 - Ken Griffey
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -572,13 +611,13 @@ rbi:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse a YAML directive", function()
-		local doc = [[
+  it("should parse a YAML directive", function()
+    local doc = [[
 %YAML 1.2
 ---
 Document
@@ -586,7 +625,7 @@ Document
 ---
 value
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 =VAL :Document
@@ -596,13 +635,13 @@ value
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse multiple documents", function()
-		local doc = [[
+  it("should parse multiple documents", function()
+    local doc = [[
 Document
 ---
 # Empty
@@ -611,7 +650,7 @@ Document
 ---
 value
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 =VAL :Document
@@ -624,13 +663,13 @@ value
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should parse multiple documents with map", function()
-		local doc = [[
+  it("should parse multiple documents with map", function()
+    local doc = [[
 Document
 ---
 # Empty
@@ -640,7 +679,7 @@ Document
 matches %: 20
 ]]
 
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 =VAL :Document
@@ -656,34 +695,34 @@ matches %: 20
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a simple value", function()
-		local doc = [[
+  it("should lex a simple value", function()
+    local doc = [[
 ---
 value
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 =VAL :value
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a mapping", function()
-		local doc = [[
+  it("should lex a mapping", function()
+    local doc = [[
 ---
 key: value
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -693,18 +732,18 @@ key: value
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested mapping", function()
-		local doc = [[
+  it("should lex a nested mapping", function()
+    local doc = [[
 ---
 key:
   foo: bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -717,18 +756,18 @@ key:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested mapping and one space", function()
-		local doc = [[
+  it("should lex a nested mapping and one space", function()
+    local doc = [[
 Not indented:
- By one space: 
+ By one space:
     value
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -741,19 +780,19 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested mapping and one space and literal", function()
-		local doc = [[
+  it("should lex a nested mapping and one space and literal", function()
+    local doc = [[
 Not indented:
  By one space: |
     By four
       spaces
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -766,22 +805,22 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested mapping and one space and leading comments", function()
-		local doc = [[
+  it("should lex a nested mapping and one space and leading comments", function()
+    local doc = [[
   # Leading comment line spaces are
    # neither content nor indentation.
-    
+
 Not indented:
  By one space: |
     By four
       spaces
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -794,18 +833,18 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a mapping key, with spaces", function()
-		local doc = [[
+  it("should lex a mapping key, with spaces", function()
+    local doc = [[
 "implicit block key" : [
   "implicit flow key" : value,
  ]
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -820,18 +859,18 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a mapping key", function()
-		local doc = [[
+  it("should lex a mapping key", function()
+    local doc = [[
 "implicit block key": [
   "implicit flow key" : value,
  ]
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -846,18 +885,18 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a sequence", function()
-		local doc = [[
+  it("should lex a sequence", function()
+    local doc = [[
 ---
 - value1
 - value2
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -867,19 +906,19 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested sequence", function()
-		local doc = [[
+  it("should lex a nested sequence", function()
+    local doc = [[
 ---
 - - value1
   - value2
 - value3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -892,20 +931,20 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a sequence with dash and newline", function()
-		local doc = [[
+  it("should lex a sequence with dash and newline", function()
+    local doc = [[
 ---
 -
   key1: value1
 -
   key2: value2
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -921,20 +960,20 @@ Not indented:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a node with multiline scalar", function()
-		local doc = [[
+  it("should lex a node with multiline scalar", function()
+    local doc = [[
 # This is a comment
 ---
 key:
  this is the first line
  and this is the second
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -944,20 +983,20 @@ key:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a node with folded scalar", function()
-		local doc = [[
+  it("should lex a node with folded scalar", function()
+    local doc = [[
 # This is a comment
 ---
 key: |
  this is the first line
  and this is the second
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -967,13 +1006,13 @@ key: |
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a node with comment exclude", function()
-		local doc = [[
+  it("should lex a node with comment exclude", function()
+    local doc = [[
 # This is a comment
 ---
 - - value1 # another comment
@@ -981,7 +1020,7 @@ key: |
 # and a comment
 - value 3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -994,18 +1033,18 @@ key: |
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a seq and map on the same line", function()
-		local doc = [[
+  it("should lex a seq and map on the same line", function()
+    local doc = [[
 # This is a comment
 ---
 - key: value1 # another comment
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -1017,13 +1056,13 @@ key: |
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a nested map", function()
-		local doc = [[
+  it("should lex a nested map", function()
+    local doc = [[
 # This is a comment
 ---
 key: value1
@@ -1033,7 +1072,7 @@ foo:
     hoz: hoy
 mom: happy
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1055,20 +1094,20 @@ mom: happy
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a document with secondary tag", function()
-		local doc = [[
+  it("should lex a document with secondary tag", function()
+    local doc = [[
 # Ordered maps are represented as
 # A sequence of mappings, with
 # each mapping having one key
 --- !!omap
 - some: map
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ <tag:yaml.org,2002:omap>
@@ -1080,38 +1119,38 @@ mom: happy
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a document with named tag", function()
-		local doc = [[
+  it("should lex a document with named tag", function()
+    local doc = [[
 %TAG !e! tag:example.com,2000:app/
 ---
 !e!foo "bar"
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 =VAL <tag:example.com,2000:app/foo> "bar
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with empty characters and tabs", function()
-		local doc = [[
+  it("should lex a map with empty characters and tabs", function()
+    local doc = [[
 
 a: b
 seq:
  - a
 c: d	#X
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1127,19 +1166,19 @@ c: d	#X
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a seq and map on the same line", function()
-		local doc = [[
+  it("should lex a seq and map on the same line", function()
+    local doc = [[
 # This is a comment
 ---
 - key: value1 # another comment
   foo: bar
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ
@@ -1153,13 +1192,13 @@ c: d	#X
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a seq in map with same indentation", function()
-		local doc = [[
+  it("should lex a seq in map with same indentation", function()
+    local doc = [[
 ---
 hr: # 1998 hr ranking
 - Mark McGwire
@@ -1169,7 +1208,7 @@ rbi:
 - Sammy Sosa
 - Ken Griffey
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1187,51 +1226,51 @@ rbi:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should error on wrong indentation error in seq", function()
-		local doc = [[
+  it("should error on wrong indentation error in seq", function()
+    local doc = [[
 - - ok
   - also ok
  - wrong
 ]]
-		local result, mes = yalua.dump(doc)
-		assert.is_nil(result)
-		assert.are.same("ERROR:3:0 wrong indentation: should be 0 but is 1\n - wrong\n^", mes)
-	end)
+    local result, mes = yalua.dump(doc)
+    assert.is_nil(result)
+    assert.are.same("ERROR:3:0 wrong indentation: should be 0 but is 1\n - wrong\n^", mes)
+  end)
 
-	it("should error on wrong indentation error", function()
-		local doc = [[
+  it("should error on wrong indentation error", function()
+    local doc = [[
 key:
    - ok
    - also ok
   - wrong
 ]]
-		local result, mes = yalua.dump(doc)
-		assert.is_nil(result)
-		assert.are.same("ERROR:4:0 wrong indentation: should be 0 but is 2\n  - wrong\n^", mes)
-	end)
+    local result, mes = yalua.dump(doc)
+    assert.is_nil(result)
+    assert.are.same("ERROR:4:0 wrong indentation: should be 0 but is 2\n  - wrong\n^", mes)
+  end)
 
-	it("should parse the Wrong indendation in mapping", function()
-		local doc = [[
+  it("should parse the Wrong indendation in mapping", function()
+    local doc = [[
 k1: v1
  k2: v2
 ]]
-		local result, mes = yalua.dump(doc)
-		assert.is_nil(result)
-		assert.are.same("ERROR:2:3 invalid multiline plain key\n k2: v2\n   ^", mes)
-	end)
+    local result, mes = yalua.dump(doc)
+    assert.is_nil(result)
+    assert.are.same("ERROR:2:3 invalid multiline plain key\n k2: v2\n   ^", mes)
+  end)
 
-	it("should lex a document with a directive", function()
-		local doc = [[
+  it("should lex a document with a directive", function()
+    local doc = [[
 %TAG ! tag:clarkevans.com,2002:
 --- !shape
 - circle
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ <tag:clarkevans.com,2002:shape>
@@ -1240,20 +1279,20 @@ k1: v1
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a document with tag in seq", function()
-		local doc = [[
+  it("should lex a document with tag in seq", function()
+    local doc = [[
 
 %TAG ! tag:clarkevans.com,2002:
 --- !shape
 - !circle
   diameter: 120
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ <tag:clarkevans.com,2002:shape>
@@ -1265,13 +1304,13 @@ k1: v1
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a document with multiline comments", function()
-		local doc = [[
+  it("should lex a document with multiline comments", function()
+    local doc = [[
 %TAG ! tag:clarkevans.com,2002:
 --- !shape
   # Use the ! handle for presenting
@@ -1279,7 +1318,7 @@ k1: v1
 - !circle
   diameter: 120
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +SEQ <tag:clarkevans.com,2002:shape>
@@ -1291,34 +1330,34 @@ k1: v1
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a document with multiline comments", function()
-		local doc = [[
+  it("should lex a document with multiline comments", function()
+    local doc = [[
   # Use the ! handle for presenting
 
 
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a sequence with map on new line", function()
-		local doc = [[
+  it("should lex a sequence with map on new line", function()
+    local doc = [[
  - key: value
    key2: value2
  -
    key3: value3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +SEQ
@@ -1336,19 +1375,19 @@ k1: v1
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with anchors and reference", function()
-		local doc = [[
+  it("should lex a map with anchors and reference", function()
+    local doc = [[
  - key: &a value
    key2: value2
  -
    key3: *a
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +SEQ
@@ -1366,13 +1405,13 @@ k1: v1
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with anchors in list", function()
-		local doc = [[
+  it("should lex a map with anchors in list", function()
+    local doc = [[
 ---
 hr:
 - Mark McGwire
@@ -1382,7 +1421,7 @@ rbi:
 - *SS # Subsequent occurrence
 - Ken Griffey
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1400,13 +1439,13 @@ rbi:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with anchors and comments", function()
-		local doc = [[
+  it("should lex a map with anchors and comments", function()
+    local doc = [[
 a: "double
   quotes" # lala
 b: plain
@@ -1419,7 +1458,7 @@ e:
 block: > # lala
   abcde
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1442,18 +1481,18 @@ block: > # lala
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with empty values", function()
-		local doc = [[
+  it("should lex a map with empty values", function()
+    local doc = [[
 key1: val1
 key2:
 key3:
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1467,18 +1506,18 @@ key3:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with values with anchor", function()
-		local doc = [[
+  it("should lex a map with values with anchor", function()
+    local doc = [[
 key1: val1
 key2: &a val2
 key3: *a
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1492,18 +1531,18 @@ key3: *a
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with emty values", function()
-		local doc = [[
+  it("should lex a map with emty values", function()
+    local doc = [[
 key1: val1
 key2:
 key3: val3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1517,18 +1556,18 @@ key3: val3
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with empty values with anchor", function()
-		local doc = [[
+  it("should lex a map with empty values with anchor", function()
+    local doc = [[
 key1: val1
 key2: &a
 key3:
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1542,18 +1581,18 @@ key3:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a sequence with empty entries", function()
-		local doc = [[
+  it("should lex a sequence with empty entries", function()
+    local doc = [[
 - val1
 -
 - val3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +SEQ
@@ -1564,18 +1603,18 @@ key3:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a sequence with empty entries and anchor", function()
-		local doc = [[
+  it("should lex a sequence with empty entries and anchor", function()
+    local doc = [[
 - val1
 - &a
 - val3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +SEQ
@@ -1586,17 +1625,17 @@ key3:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with anchor and alias", function()
-		local doc = [[
+  it("should lex a map with anchor and alias", function()
+    local doc = [[
 top3: &node3
   *alias1 : scalar3
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1609,18 +1648,18 @@ top3: &node3
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex an aliased map", function()
-		local doc = [[
+  it("should lex an aliased map", function()
+    local doc = [[
 &a: key: &a value
 foo:
   *a:
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC
 +MAP
@@ -1632,20 +1671,20 @@ foo:
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with empty anchor and comment", function()
-		local doc = [[
+  it("should lex a map with empty anchor and comment", function()
+    local doc = [[
 ---
 top1: &node1
   &k1 key1: one
 top2: &node2 # comment
   key2: two
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1663,19 +1702,19 @@ top2: &node2 # comment
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with complex key", function()
-		local doc = [[
+  it("should lex a map with complex key", function()
+    local doc = [[
 ---
 ? - key1
   - key2
 : - val1
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1690,13 +1729,13 @@ top2: &node2 # comment
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 
-	it("should lex a map with complex key with mutliple entries", function()
-		local doc = [[
+  it("should lex a map with complex key with mutliple entries", function()
+    local doc = [[
 ---
 ? - key1
   - key2
@@ -1706,7 +1745,7 @@ top2: &node2 # comment
   - key4
 : - val2
 ]]
-		local expect = [[
+    local expect = [[
 +STR
 +DOC ---
 +MAP
@@ -1728,8 +1767,8 @@ top2: &node2 # comment
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
-	end)
+    local result = yalua.dump(doc)
+    assert(result)
+    assert.are.same(expect, result)
+  end)
 end)

@@ -416,7 +416,7 @@ text: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a folded string in a sequence and map with hint #subject", function()
+	it("should lex a folded string in a sequence and map with hint", function()
 		local doc = [[
 --- 
 - foo: |2
