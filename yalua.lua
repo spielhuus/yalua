@@ -1,4 +1,30 @@
-local to_string = require("str").to_string
+function to_string(obj, indent, visited)
+  indent = indent or ""
+  visited = visited or {}
+
+  if type(obj) == "table" then
+    if visited[obj] then
+      return "<recursive table>"
+    end
+    visited[obj] = true
+
+    local output = "{\n"
+    for k, v in pairs(obj) do
+      output = output
+          .. indent
+          .. "  "
+          .. to_string(k, indent .. "  ", visited)
+          .. " = "
+          .. to_string(v, indent .. "  ", visited)
+          .. ",\n"
+    end
+    return output .. indent .. "}"
+  elseif type(obj) == "string" then
+    return '"' .. obj .. '"'
+  else
+    return tostring(obj)
+  end
+end
 
 local GLOBAL_TAG = "tag:yaml.org,2002:"
 
