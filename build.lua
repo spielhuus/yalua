@@ -6,7 +6,8 @@ local yalua = require("yalua")
 
 -- luacheck: push max-line-length
 local EXCLUDE_TESTS = '--exclude-tags="indent,whitespace,scalar,flow,error,directive"'
-local RUN_TESTS = '--tags="folded"'
+local RUN_TESTS = ''
+-- local RUN_TESTS = '--tags="folded"'
 -- '--exclude-tags="Y79Y,SKE5,PW8X,M5C3,M2N8,EB22,4FJ6,ZXT5,X38W,VJP3,V9D5,UV7Q,UKK6,U3XV,SY6V,SU74,SR86,SM9W,NKF9,NHX8,NB6Z,N782,KK5P,JTV5,JR7V,J3BT,HU3P,H7J7,GDY7,G9HC,FP8R,FH7J,FBC9,F8F9,EXG3,EHF6,DK95,DK4H,DK3J,DBG4,CXX2,CVW2,CML9,C2SP,BU8L,BS4K,BF9H,AVM7,A984,9MMW,9KAX,82AN,7ZZ5,7BMT,6CA3,6BFJ,652Z,5U3A,565N,4V8U,4JVG,3HFZ,6PBE"'
 -- luacheck: pop
 

@@ -1,4 +1,8 @@
-function to_string(obj, indent, visited)
+local function log(...)
+  -- print(...)
+end
+
+local function to_string(obj, indent, visited)
   indent = indent or ""
   visited = visited or {}
 
@@ -206,7 +210,6 @@ function Lexer:anchor_char()
     table.insert(res, self:next_char())
     char = self:peek_char()
   end
-  print("CHAR: " .. table.concat(res, ""))
   return table.concat(res, "")
 end
 
@@ -1053,6 +1056,7 @@ function Parser:quoted(token)
   local last_nl = false
   for i, line in ipairs(token.val) do
     if token.type == '"' and string.match(line, "\\$") then
+      if not res then res = {} end
       table.insert(res, ltrim(string.sub(line, 1, #line - 1)))
     elseif token.type == '"' and string.match(line, "^( +\\)(.*)$") then
       local content = string.match(line, "^ +\\(.*)$")
@@ -1091,27 +1095,27 @@ function Parser:quoted(token)
 end
 
 function Parser:folded(token, indent, folded)
-  print("folded: indent:" ..
+  log("folded: indent:" ..
     indent .. " folded:" .. to_string(folded) .. ", col:" .. token.col .. " " .. to_string(self.lexer:peek()))
   local lines = {}
   assert(token.kind == "VAL")
-  print("first value: " .. token.val)
+  log("first value: " .. token.val)
   table.insert(lines, token.val)
   local line = 1
   if token.col == 0 then
     folded = true
   end
   if self.lexer:peek().kind == "NL" then
-    print("NL before loop" .. to_string(self.lexer:peek(2)))
+    log("NL before loop" .. to_string(self.lexer:peek(2)))
     if self.lexer:peek(2) and self.lexer:peek(2).kind == "SEP"
         and self.lexer:peek(4) and self.lexer:peek(4).kind == "COLON" then
       return lines[1]
     end
     self.lexer:next()
-    print("next:" .. to_string(self.lexer:peek()));
+    log("next:" .. to_string(self.lexer:peek()));
   end
   while self.lexer:peek() do
-    print(" colon: " .. self.lexer:peek().kind .. ":" .. self.lexer:peek().val)
+    log(" colon: " .. self.lexer:peek().kind .. ":" .. self.lexer:peek().val)
     if self.lexer:peek().kind == "VAL" then
       if lines[#lines] and lines[#lines] ~= "\n" then
         table.insert(lines, " " .. self.lexer:next().val)
@@ -1120,22 +1124,22 @@ function Parser:folded(token, indent, folded)
       end
       if self.lexer:peek().kind == "COLON" then
         if line > 1 then
-          print("error")
+          log("error")
           return nil, self.lexer:error("invalid multiline plain key", self.lexer:peek())
         else
           -- table.insert(lines, self.lexer:next().val)
-          print("break after colon", to_string(lines))
+          log("break after colon", to_string(lines))
           break
         end
       end
     elseif self.lexer:peek().kind == "SEP" then
-      print(" sep:" .. tostring(folded) .. " " .. #self.lexer:peek().val .. " " .. indent)
+      log(" sep:" .. tostring(folded) .. " " .. #self.lexer:peek().val .. " " .. indent)
       if not folded and #self.lexer:peek().val <= indent then
         if self.lexer:peek(2) and self.lexer:peek(2).kind == "NL" then
           table.insert(lines, "\n")
           self.lexer:next(2)
         else
-          print("break after sep")
+          log("break after sep")
           break
         end
       elseif folded and #self.lexer:peek().val < indent then
@@ -1143,18 +1147,18 @@ function Parser:folded(token, indent, folded)
       end
       self.lexer:next()
     elseif self.lexer:peek().kind == "NL" then
-      print("NL", to_string(self.lexer:peek(2)))
+      log("NL", to_string(self.lexer:peek(2)))
       if not self.lexer:peek(2) then
-        print("break eof")
+        log("break eof")
         break
       elseif not folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek(2).val <= indent then
-        print("break not folded: " .. to_string(self.lexer:peek(2)))
+        log("break not folded: " .. to_string(self.lexer:peek(2)))
         break
       elseif folded and self.lexer:peek(2).kind == "SEP" and #self.lexer:peek(2).val < indent then
-        print("break folded: " .. to_string(self.lexer:peek(2)))
+        log("break folded: " .. to_string(self.lexer:peek(2)))
         break
       elseif folded and self.lexer:peek(2).kind == "COLON" then
-        print("break colon after nl: " .. to_string(self.lexer:peek(2)))
+        log("break colon after nl: " .. to_string(self.lexer:peek(2)))
         break
       end
       self.lexer:next()
@@ -1163,7 +1167,7 @@ function Parser:folded(token, indent, folded)
       break
     end
   end
-  print("return folded: '" .. table.concat(lines, "") .. "'")
+  log("return folded: '" .. table.concat(lines, "") .. "'")
   return table.concat(lines, "")
 end
 
@@ -1278,24 +1282,29 @@ function Parser:literal(token)
 end
 
 function Parser:block_node(indent, folded)
-  print("ENTER block_node: indent: " .. indent .. ", folded: " .. tostring(folded))
+  log("ENTER block_node: indent: " .. indent .. ", folded: " .. tostring(folded))
   -- local state = "STATE: "
   -- for _, s in ipairs(self.state) do
   -- 	state = state .. " > " .. s
   -- end
-  -- print(state)
+  -- log(state)
   local token = self.lexer:next()
   while token do
     if token.kind == "VAL" then
       if self.lexer:peek() and self.lexer:peek().kind == "COLON" then
+        local map_indent = token.col
         if self.anchor[#self.anchor] and self.anchor[#self.anchor].row == token.row then
           token.anchor = table.remove(self.anchor)
+          map_indent = token.anchor.col
         end
-        return self:map(token.col, token)
+        return self:map(map_indent, token)
       else
         local anchor = table.remove(self.anchor)
-        local val = self:folded(token, indent, folded)
+        local val, mes = self:folded(token, indent, folded)
         -- assert(self.lexer:peek().kind == "NL", self.lexer:peek().kind or "eof")
+        if val == nil then
+          return nil, mes
+        end
         local tagref = self.tagref -- TODO: tag
         self.tagref = nil
         return { { kind = "VAL", val = val, tag = tagref, anchor = anchor } }
@@ -1350,8 +1359,8 @@ function Parser:block_node(indent, folded)
       self.tagref = token
       self.tagref.val = self:parse_tag(self.tagref.val)
     elseif token.kind == "ANCHOR" then
-      -- assert(self.anchor == nil)
       table.insert(self.anchor, token)
+      token = self.lexer:next()
     elseif token.kind == "ALIAS" then
       local alias = { kind = "ALIAS", val = token.val, tag = self.tagref }
       if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
@@ -1367,12 +1376,15 @@ function Parser:block_node(indent, folded)
       local tagref = self.tagref
       self.tagref = nil
       local key = self:block_node(self.lexer:peek().col, false)
-      print("COMPLEX KEY: " .. to_string(key))
+      log("COMPLEX KEY: " .. to_string(key))
       return self:map(indent, key, tagref)
     elseif token.kind == "NL" then
       if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
         local _ = self.lexer:next()
       end
+    elseif token.kind == "END_DOC" or token.kind == "START_DOC" then
+      error("end doc")
+      break
     else
       error("unknown item: " .. token.kind)
     end
@@ -1484,7 +1496,7 @@ function Parser:flow_map(indent, flow_indent)
       end
       assert(self.lexer:peek().kind == "VAL", "expected VAL but is: " .. self.lexer:peek().kind)
       local val = self.lexer:next()
-      print("key val: " .. to_string(val))
+      log("key val: " .. to_string(val))
       while
         self.lexer:peek()
         and self.lexer:peek().kind ~= "FLOW_COLON"
@@ -1498,10 +1510,10 @@ function Parser:flow_map(indent, flow_indent)
     elseif token.kind == "VAL" then
       local val = self.lexer:next()
       while self:peek_val() do
-        print("peek_val")
+        log("peek_val")
         local val_token = self.lexer:peek()
         while val_token do
-          print(" val: " .. val_token.kind)
+          log(" val: " .. val_token.kind)
           if val_token.kind == "VAL" then
             val.val = val.val .. val_token.val
           elseif val_token.kind == "NL" then
@@ -1513,7 +1525,7 @@ function Parser:flow_map(indent, flow_indent)
           val_token = self.lexer:peek()
         end
       end
-      print("VAL: " .. is_key .. " " .. val.val)
+      log("VAL: " .. is_key .. " " .. val.val)
       table.insert(tokens, { kind = "VAL", val = val.val, tag = self.tagref, anchor = table.remove(self.anchor) })
       self.tagref = nil
       is_key = (is_key + 1) % 2
@@ -1574,7 +1586,7 @@ function Parser:flow_seq(indent, flow_indent)
       if self.lexer:peek().kind == "FLOW_COLON" then
         self.lexer:next()
         table.insert(tokens, { kind = "+MAP {}" })
-        print("VAL: " .. res)
+        log("VAL: " .. res)
         table.insert(tokens, { kind = "VAL", val = res, type = token.type })
         if self.lexer:peek().kind == "SEP" then
           self.lexer:next()
@@ -1642,7 +1654,7 @@ function Parser:flow_seq(indent, flow_indent)
       self.lexer:next()
       assert(self.lexer:peek().kind == "VAL", "expected VAL but is: " .. self.lexer:peek().kind)
       local val = self.lexer:next()
-      print("key val: " .. to_string(val))
+      log("key val: " .. to_string(val))
       while
         self.lexer:peek()
         and self.lexer:peek().kind ~= "FLOW_COLON"
@@ -1653,7 +1665,7 @@ function Parser:flow_seq(indent, flow_indent)
           val.val = val.val .. " " .. next_val.val
         end
       end
-      print("after key: " .. to_string(self.lexer:peek()))
+      log("after key: " .. to_string(self.lexer:peek()))
       if self.lexer:peek().kind == "END_FLOW_SEQ" then
         table.insert(tokens, { kind = "+MAP {}" })
         if val and val.kind == "VAL" then
@@ -1672,9 +1684,9 @@ function Parser:flow_seq(indent, flow_indent)
           table.insert(tokens, { kind = "VAL", val = "" })
         end
         val = self.lexer:next()
-        print("first val: " .. to_string(val))
+        log("first val: " .. to_string(val))
         val = self.lexer:next()
-        print("second val: " .. to_string(val))
+        log("second val: " .. to_string(val))
         if val and val.kind == "VAL" then
           table.insert(tokens, { kind = "VAL", val = val.val })
         else
@@ -1740,7 +1752,7 @@ function Parser:flow(indent, flow_indent)
 end
 
 function Parser:sequence(indent)
-  print("sequence " .. indent)
+  log("sequence " .. indent)
   local act_indent = indent
   local tokens = {}
   table.insert(self.state, "SEQ")
@@ -1757,9 +1769,9 @@ function Parser:sequence(indent)
       self.indent = token.indent
     elseif token.kind == "NL" then
       self.lexer:next()
-      print("found NL: after: " .. (self.lexer:peek(2) and self.lexer:peek(2).kind or "eof"))
+      log("found NL: after: " .. (self.lexer:peek(2) and self.lexer:peek(2).kind or "eof"))
       if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
-        print("found sep: next:" .. self.lexer:peek(2).kind)
+        log("found sep: next:" .. self.lexer:peek(2).kind)
         local sep = self.lexer:peek()
         -- check sep
         if #sep.val < indent then
@@ -1771,9 +1783,9 @@ function Parser:sequence(indent)
       end
     elseif token.kind == "DASH" then
       act_indent = self.lexer:next().col
-      print("found dash")
+      log("found dash")
       if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
-        print("skip sep")
+        log("skip sep")
         local _ = self.lexer:next()
       end
       if
@@ -1822,10 +1834,12 @@ function Parser:sequence(indent)
     then
       table.insert(tokens, { kind = "VAL", val = "", tag = self.tagref, anchor = self.lexer:next() })
       self.tagref = nil
+    elseif token.kind == "END_DOC" or token.kind == "START_DOC" then
+      break
     else
-      print("seq: call block node: " .. act_indent)
+      log("seq: call block node: " .. act_indent .. " type: " .. self.lexer:peek().kind)
       local val = self:block_node(act_indent, true)
-      print("= call block node: " .. to_string(val))
+      log("= call block node: " .. to_string(val))
       -- assert(self.lexer:peek().kind == "NL")
       self:push(tokens, val)
     end
@@ -1833,12 +1847,12 @@ function Parser:sequence(indent)
   end
   table.insert(tokens, { kind = "-SEQ" })
   table.remove(self.state)
-  print("end sequence " .. indent)
+  log("end sequence " .. indent)
   return tokens
 end
 
 -- function Parser:sequence(indent)
---   print("sequence " .. indent)
+--   log("sequence " .. indent)
 --   local act_indent = indent
 --   local tokens = {}
 --   table.insert(self.state, "SEQ")
@@ -1854,11 +1868,11 @@ end
 --     end
 --
 --     local token = self.lexer:peek(p_index)
---     print(" - " .. to_string(token))
+--     log(" - " .. to_string(token))
 --     -- **Termination Condition:** The sequence ends if there are no more tokens,
 --     -- or if the next significant token is NOT a dash, or if its indentation is too low.
 --     if not token or token.kind ~= "DASH" or token.col < indent then
---       print("break no dash")
+--       log("break no dash")
 --       break
 --     end
 --
@@ -1886,12 +1900,12 @@ end
 --
 --   table.insert(tokens, { kind = "-SEQ" })
 --   table.remove(self.state)
---   print("end sequence " .. indent)
+--   log("end sequence " .. indent)
 --   return tokens
 -- end
 
 function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could this be done with the key_token
-  print("enter map: " .. indent)
+  log("enter map: " .. indent .. ", key_token: " .. to_string(key_token))
   local tokens = {}
   table.insert(tokens, { kind = "+MAP", tag = (tag and tag or self.tagref), anchor = table.remove(self.anchor) })
   table.insert(self.state, "MAP")
@@ -1917,15 +1931,33 @@ function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could 
   local vals = 0
   while token do
     if token.kind == "VAL" then
-      print("get val in map map")
+      log("get val in map map")
       local val, mes = self:folded(token, indent, false)
       if not val then
         return val, mes
       end
+      -- If vals is 1, we have just processed a value, so this current VAL must be a new KEY.
+      -- Implicit keys in block mapping must be followed by a colon.
+      if vals == 1 then
+        local p = 1
+
+        local next_tok = self.lexer:peek(p)
+        -- Skip over any whitespace/separators between the key and the colon
+        while next_tok and next_tok.kind == "SEP" do
+          p = p + 1
+          next_tok = self.lexer:peek(p)
+        end
+        -- If the next significant token is not a colon, this is an invalid key
+        if not next_tok or next_tok.kind ~= "COLON" then
+          return nil, self.lexer:error("Implicit map key '" .. val .. "' is not followed by a colon", token)
+        end
+      end
+
       table.insert(tokens, { kind = "VAL", val = val, anchor = table.remove(self.anchor) })
       vals = (vals + 1) % 2
     elseif token.kind == "SEP" then
       if #token.val < indent then
+        log("return from map: ", #token.val, "<", indent)
         self.lexer:rewind()
         break
       elseif self.lexer:peek(2) and self.lexer:peek(2).kind == "COLON" and #token.val > indent then
@@ -1936,13 +1968,14 @@ function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could 
             )
       end
     elseif token.kind == "NL" then
-      if self.lexer:peek() == "SEP" then
-        self.lexer:next()
-      end
+      -- TODO
+      -- if self.lexer:peek() == "SEP" then
+      --   self.lexer:next()
+      -- end
     elseif token.kind == "COLON" then
       -- skip the separator after the colon
       -- TODO: validate that it is not tab
-      print("colon in map")
+      log("colon in map")
       if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
         local _ = self.lexer:next()
       end
@@ -1980,10 +2013,10 @@ function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could 
           end
         end
         if not has_empty_val then
-          print("MAP: search value after colon: ", self.lexer.row, ", ", self.lexer.col, ", ",
+          log("MAP: search value after colon: ", self.lexer.row, ", ", self.lexer.col, ", ",
             to_string(self.lexer:peek()))
           local res = self:block_node(next_indent, true)
-          print("after block node", to_string(self.lexer:peek()))
+          log("after block node", to_string(self.lexer:peek()))
           if self.lexer:peek() and self.lexer:peek().kind == "SEP" then
             local sep = self.lexer:peek()
             if #sep.val > indent then
@@ -2027,7 +2060,7 @@ function Parser:map(indent, key_token, tag) -- TODO: is tag necessary, or could 
       vals = (vals + 1) % 2
     else
       self.lexer:rewind()
-      print("map: call block node")
+      log("map: call block node")
       local child, mes = self:block_node(indent)
       if not child then
         return nil, mes
@@ -2127,9 +2160,14 @@ function Parser:parse()
     self.lexer:next()
   end
   local token = self.lexer:peek()
-  local indent = (token and #token.val or 0)
-  self.lexer:next()
-  token = self.lexer:peek()
+  local indent = 0
+  if token and token.kind == "SEP" then
+    indent = #token.val
+  end
+
+  -- local indent = (token and #token.val or 0)
+  -- self.lexer:next()
+  -- token = self.lexer:peek()
   local res = 1
   local mes
   while token do
@@ -2298,7 +2336,7 @@ end
 -- if not res then
 -- 	return res, mes
 -- else
--- 	print(tostring(parser))
+-- 	log(tostring(parser))
 -- end
 
 return {
@@ -2308,13 +2346,13 @@ return {
     if mes then
       return nil, mes
     end
-    -- print(to_string(lexer.tokens))
+    -- log(to_string(lexer.tokens))
     return lexer:html()
   end,
   dump = function(content)
     local lexer = Lexer:new(content)
     local mes = lexer:lexme()
-    print(to_string(lexer.tokens))
+    log(to_string(lexer.tokens))
     if mes then
       return nil, mes
     end
