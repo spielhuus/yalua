@@ -26,24 +26,7 @@ jobs:
       - name: Pull Yaml test suite
         run: git clone https://github.com/yaml/yaml-test-suite.git yaml-test-suite && make -C yaml-test-suite data
 
-      # - name: Setup dependencies
-      #   run: |
-      #     luarocks install penlight ${{ matrix.penlightVersion }}
-      #     luarocks install moonscript
-      #     luarocks install luacov
-      #     luarocks install --deps-only busted-scm-1.rockspec
-
-      # - name: Build ‘busted’ (bootstrap)
-      #   run: |
-      #     luarocks make
-
       - name: Run ‘busted’
         # disable project-local path prefixes to force use of system installation
         run: luarocks --lua-version ${{ matrix.luaVersion }} test spec/test/
 
-      # - name: Report test coverage
-      #   if: ${{ success() && github.repository == 'lunarmodules/busted' }}
-      #   continue-on-error: true
-      #   run: luacov-coveralls -i src -e .luarocks
-      #   env:
-      #     COVERALLS_REPO_TOKEN: ${{ github.token }}

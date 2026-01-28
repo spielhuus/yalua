@@ -3,166 +3,208 @@
 | Build Status | [![unittests](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/busted.yml?branch=main&style=for-the-badge&label=Unittests)](https://github.com/spielhuus/yalua/actions/workflows/test.yml) [![luacheck](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/luacheck.yml?branch=main&style=for-the-badge&label=Luacheck)](https://github.com/spielhuus/yalua/actions/workflows/luacheck.yml) [![llscheck](https://img.shields.io/github/actions/workflow/status/spielhuus/yalua/llscheck.yml?branch=main&style=for-the-badge&label=llscheck)](https://github.com/spielhuus/yalua/actions/workflows/llscheck.yml) |
 | License      | [![License-MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](https://github.com/spielhuus/yalua/blob/main/LICENSE)|
 
-> [!IMPORTANT]
-> This is a work in progress project
+# Yalua - Pure Lua YAML Parser
 
-# Lua YAML parser
+**Yalua** is a fast, self-contained, pure Lua implementation of a YAML parser. It is designed to be compatible with LuaJIT and Lua 5.1+.
 
-this is a pure lua implentation of a YAML parser. the yaml.lua file is self contained. 
+This library focuses on **parsing** YAML strings or files into Lua tables. 
+*Note: Currently, this library does not support emitting (dumping) Lua tables back into YAML format.*
 
-```lua
+## Features
 
-str = "\t \tThis\tis a test string." 
-str = str:gsub(" +", "") 
-print(str)  -- Output: Thisisateststring. 
+*   **Pure Lua:** No external C dependencies required for the core library.
+*   **YAML 1.2 Compatible:** Tested against the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite).
+*   **Supports:**
+    *   Block and Flow styles (Maps and Sequences).
+    *   Scalars (Strings, Numbers, Booleans, Nulls).
+    *   Anchors and Aliases (`&` and `*`).
+    *   Explicit Tags.
+    *   Multi-line scalar styles (Literal `|` and Folded `>`).
+
+## Installation
+
+### Using LuaRocks
+
+You can install Yalua easily using LuaRocks.
+
+To install from the source tree (local development):
+
+```sh
+# Clone the repository
+git clone http://github.com/spielhuus/yalua.git
+cd yalua
+
+# Install to the local tree
+luarocks make --lua-version=5.1 --tree .luarocks
 ```
 
+### Manual Installation
+
+Since Yalua is self-contained, you can simply copy the `yalua.lua` file into your project's library path.
+
+```sh
+cp yalua.lua /path/to/your/project/libs/
+```
+
+## Usage
+
+### Basic Decoding
+
+To convert a YAML string into a Lua table, use `yalua.decode`:
+
 ```lua
-a = false
-b = " s"
-c = "a\n"
-if not a and (b == " " or c == "\n") then
-    print("YEP")
-else 
-    print("NOPE")
+local yalua = require("yalua")
+
+local yaml_str = [[
+name: Yalua
+version: 1.0
+features:
+  - fast
+  - simple
+enabled: true
+]]
+
+local result, err = yalua.decode(yaml_str)
+
+if err then
+    print("Error parsing YAML:", err)
+else
+    print("Name:", result.name)
+    print("Feature 1:", result.features[1])
 end
 ```
 
+### Parsing Files
+
+To read and parse a file directly from the disk, use `yalua.parse`:
 
 ```lua
+local yalua = require("yalua")
 
-str = "foo: bar\nfoz: baz"
-print(string.match(str, "^([%w-]+)(:%s)", 1))
-print(string.match(str, "^(:%s)", 1))
--- res = string.match(str, "^%d", 10)
--- print(res)
+local config, err = yalua.parse("config.yaml")
 
+if not config then
+    error("Failed to parse file: " .. err)
+end
 ```
 
+### Handling Null Values
 
-```py
-import yaml
-
-data = """
-"text 
- line \
-   line
-"
-"""
-
-parsed = yaml.safe_load(data)
-
-print(parsed)
-
-```
-
-```py
-import yaml
-data  = """
-aaaabc: def # comment
-"""
-parsed = yaml.safe_load(data)
-print(parsed)
-```
-
-```py
-import yaml
-data  = """
-aaaabc def # comment
-"""
-parsed = yaml.safe_load(data)
-print(parsed)
-```
-
-```py
-import yaml
-data  = """
-aaaabc def # comment: value
-
-"""
-parsed = yaml.safe_load(data)
-print(parsed)
-```
-
-```py
-import yaml
-
-data  = """
-- # Empty
-- |
- block node
-- - one # Compact
-  - two # sequence
-- one: two # Compact mapping
-"""
-parsed = yaml.safe_load(data)
-print(parsed)
-```
-
-# Installation
-
-install it from source using luarocks:
-
-```sh
-git clone http://github.com/spielhuus/yaml.lua.git
-cd yaml.lya
-
-# install to the user tree
-luarocks make --lua-version=5.1 --tree .luarocks
-# install to a local tree
-luarocks make --lua-version=5.1 --tree .luarocks
-```
-
-alternatively you can just copy the yaml.lua to a local tree.
-
-# Usage
-
-
-
-# Examples
-
-
+Lua tables cannot contain `nil` values. Yalua uses a sentinel object to represent YAML `null`.
 
 ```lua
-yaml = require("yaml")
-str = require("str")
+local yalua = require("yalua")
 
-Example23 = [[american: hurray
-germans: kraut]]
-print(str.to_string(yaml.decode(Example23)))
+local data = yalua.decode("value: null")
+
+if data.value == yalua.null then
+    print("The value is null")
+end
 ```
 
-# Development
+### Debugging (Lexer Dump)
 
-run test thest suite
+The `dump` function is available for debugging purposes. It returns the internal event stream string generated by the parser, **not** valid YAML.
+
+```lua
+local debug_stream = yalua.dump("key: value")
+print(debug_stream)
+-- Output example:
+-- +STR
+-- +DOC
+-- +MAP
+-- =VAL :key
+-- =VAL :value
+-- -MAP
+-- -DOC
+-- -STR
+```
+
+## Development
+
+This project includes a comprehensive build and test script `build.lua` to manage testing, linting, and compliance with the YAML Test Suite.
+
+### Prerequisites
+
+1.  **Lua Environment:** LuaJIT or Lua 5.1+ and LuaRocks.
+2.  **System Tools:** 
+    *   `lcov` (required for coverage reports).
+    *   Build tools (`automake`, `autoconf`, `libtool`, `pkg-config`) to compile `libfyaml`.
+
+### Environment Setup
+
+To begin development, you must install the dependencies and configure your shell environment so the script can find them.
+
+1.  **Install Lua Dependencies:**
+    ```sh
+    luarocks make --lua-version=5.1 --tree .luarocks
+    ```
+
+2.  **Configure Path:**
+    Run the following command to update your shell environment:
+    ```sh
+    eval $(luarocks path --lua-version 5.1 --tree .luarocks --bin)
+    ```
+
+### Libfyaml Setup (Optional)
+
+The `diff` command (used to compare Yalua's output against a reference implementation) requires `libfyaml`. It must be downloaded and compiled within the project folder.
 
 ```sh
-make test
+# 1. Clone libfyaml
+git clone https://github.com/pantoniou/libfyaml.git
+
+# 2. Build libfyaml in a 'build' subdirectory (required by build.lua)
+cd libfyaml
+./bootstrap.sh
+mkdir build
+cd build
+../configure
+make
 ```
 
-or run it directly with busted
+### Using `build.lua`
+
+The `build.lua` script serves as the project makefile.
 
 ```sh
-eval $(luarocks path --lua-version 5.1 --tree .luarocks --bin)
-busted
-#select a test by tag
-busted --tags "2.10"
+./build.lua <command>
 ```
 
-# Failing tests
+#### Available Commands
 
-Tests with complex key in flow: 4FJ6,X38W
+*   `test`: Run the unit tests (`spec/test`).
+*   `check`: Run static analysis with `luacheck`.
+*   `lls`: Run language server checks.
+*   `suite`: Downloads and runs the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite). This generates specs in `spec/suite/` and runs them.
+*   `coverage`: Runs tests and generates a coverage report (requires `lcov` installed on the system).
+    *   *Output:* `coverage/index.html`
+*   `clean`: Removes generated test suites, coverage reports, and build artifacts.
+*   `all`: Runs check, lls, test, and suite.
+*   `dump <filename>`: Dumps the lexer output for a specific file to stdout.
+*   `diff <filename>`: Compares the Yalua parser output against `libfyaml` (requires `libfyaml` setup described above).
 
+## License
 
+MIT License
 
-# License
+Copyright (c) 2024 spielhuus
 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-# TODO
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-- fails when last line contains a tab
-  ---
-  abc
-  \t
-
-- why does this test fail 4WA9
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
