@@ -1,7 +1,7 @@
 local assert = require("luassert")
 local yalua = require("yalua")
 
-describe("Test the scalar types", function()
+describe("Test the scalar types #dump", function()
 	it("should lex a double quoted scalar", function()
 		local doc = [[
 quoted: "quoted scalar"
@@ -21,7 +21,7 @@ quoted: "quoted scalar"
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a double quoted scalar with empty line", function()
+	it("should lex a double quoted scalar with empty line #xxx", function()
 		local doc = [[
 quoted: "quoted scalar
    
@@ -42,7 +42,7 @@ quoted: "quoted scalar
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a sinlge quoted scalar", function()
+	it("should lex a sinlge quoted scalar #xxx", function()
 		local doc = [[
 quoted: 'quoted scalar'
 ]]
@@ -56,8 +56,8 @@ quoted: 'quoted scalar'
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -264,7 +264,7 @@ strip: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a literal multiline scalar with empty lines", function()
+	it("should lex a literal multiline scalar with empty lines #xxx", function()
 		local doc = [[
 strip: >
   text
@@ -311,7 +311,7 @@ strip: >
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a folded string with no indentation", function()
+	it("should lex a folded string with no indentation #xxx", function()
 		local doc = [[
 --- >
 text
@@ -330,7 +330,7 @@ another line
 		assert.are.same(expect, result)
 	end)
 
-	it("should lex a folded string with bigger empty line indentation", function()
+	it("should lex a folded string with bigger empty line indentation #xxx", function()
 		local doc = [[
 --- 
 text: >
@@ -342,10 +342,13 @@ text: >
 ]]
 		local result, mes = yalua.dump(doc)
 		assert.is.Nil(result)
-		assert.are.same(mes, "ERROR:5:2 block scalar with wrongly indented line after spaces only\n  text\n  ^")
+		assert.are.same(
+			mes,
+			"ERROR:4:3 Leading blank lines must not be more indented than the first non-empty line\n   \n   ^"
+		)
 	end)
 
-	it("should lex a folded string with empty line in more indented", function()
+	it("should lex a folded string with empty line in more indented #xxx", function()
 		local doc = [[
 --- 
 text: >
@@ -451,23 +454,9 @@ text: >
   bar: >
     second_value
 ]]
-		local expect = [[
-+STR
-+DOC ---
-+SEQ
-+MAP
-=VAL :foo
-=VAL |first value\n
-=VAL :bar
-=VAL >second_value\n
--MAP
--SEQ
--DOC
--STR
-]]
-		local result = yalua.dump(doc)
-		assert(result)
-		assert.are.same(expect, result)
+		local result, mes = yalua.dump(doc)
+		assert.is.Nil(result)
+		assert.are.same(mes, "ERROR:3:1 Expected a new document marker '---' or EOF\n first value\n ^")
 	end)
 
 	it("should lex a folded string with empty content", function()

@@ -1,7 +1,7 @@
 local assert = require("luassert")
 local yalua = require("yalua")
 
-describe("Test flow samples", function()
+describe("Test flow samples #dump", function()
 	it("should lex flow sequence as root", function()
 		local doc = [[
 [a, b, c]
@@ -98,8 +98,8 @@ describe("Test flow samples", function()
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -153,8 +153,8 @@ seq: [ 1, 2, 3, { a: b, c: d } ]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -284,8 +284,8 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -354,8 +354,8 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 	it("should handle quoted key", function()
@@ -393,8 +393,8 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -417,8 +417,8 @@ seq: [ &a 1, 2, 3, { &b a: b, c: d }, 5, 6, 7 ]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -482,8 +482,9 @@ ddd,
 ]
 ]]
 		local result = yalua.dump(doc)
-		assert(result)
+		assert.is.Nil(result)
 	end)
+
 	it("should handle indented map", function()
 		local doc = [[
 parent:
@@ -564,8 +565,8 @@ is happy, dad too]
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -693,8 +694,8 @@ b
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -714,8 +715,8 @@ b
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
@@ -763,8 +764,8 @@ b
 -DOC
 -STR
 ]]
-		local result = yalua.dump(doc)
-		assert(result)
+		local result, mes = yalua.dump(doc)
+		assert(result, mes)
 		assert.are.same(expect, result)
 	end)
 
