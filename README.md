@@ -122,7 +122,7 @@ print(debug_stream)
 
 ## Development
 
-This project includes a comprehensive build and test script `build.lua` to manage testing, linting, and compliance with the YAML Test Suite.
+This project includes a build and test script `build.lua` to manage testing, linting, and compliance with the YAML Test Suite.
 
 ### Prerequisites
 
@@ -152,14 +152,14 @@ The `diff` command (used to compare Yalua's output against a reference implement
 
 ```sh
 # 1. Clone libfyaml
-git clone https://github.com/pantoniou/libfyaml.git
+git clone --depth 1 https://github.com/pantoniou/libfyaml.git
 
 # 2. Build libfyaml in a 'build' subdirectory (required by build.lua)
 cd libfyaml
 ./bootstrap.sh
 mkdir build
 cd build
-../configure
+cmake ..
 make
 ```
 

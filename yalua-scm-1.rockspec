@@ -3,32 +3,28 @@ package = "yalua"
 version = "scm-1"
 
 dependencies = {
-	"lua >= 5.1",
+  "lua >= 5.1",
 }
 
 test_dependencies = {
-	"lua >= 5.1",
-	"luacheck",
-	"luassert",
-	"busted",
-	"rapidjson",
-	"busted-htest",
-	"luacov",
-	"luacov-reporter-lcov",
-	"llscheck",
+  "lua >= 5.1",
+  "luacheck",
+  "luassert",
+  "busted",
+  "dkjson",
+  "busted-htest",
+  "luacov",
+  "luacov-reporter-lcov",
+  "llscheck",
 }
 
 source = {
-	url = "git://github.com/spielhuus/" .. package,
+  url = "git://github.com/spielhuus/" .. package,
 }
 
 build = {
-	type = "builtin",
-	modules = {
-		["Lexer"] = "Lexer.lua",
-		["Parser"] = "Parser.lua",
-		["str"] = "str.lua",
-		["StringIterator"] = "StringIterator.lua",
-		["yalua"] = "yalua.lua",
-	},
+  type = "builtin",
+  modules = {
+    ["yalua"] = "yalua.lua",
+  },
 }
